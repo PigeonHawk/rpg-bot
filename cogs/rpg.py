@@ -92,12 +92,13 @@ class AvatarSelectView(discord.ui.View):
 
 
 class ElementView(discord.ui.View):
-    """Fire / Ice / Wind action buttons for a battle turn."""
+    """Fire / Ice / Wind action buttons + Stop for a battle turn."""
     def __init__(self, battle_id: int, acting_user_id: int):
         super().__init__(timeout=60)
-        self.battle_id     = battle_id
+        self.battle_id      = battle_id
         self.acting_user_id = acting_user_id
-        self.chosen        = None
+        self.chosen         = None
+        self.stopped        = False
 
         for elem in ["fire", "ice", "wind"]:
             btn = discord.ui.Button(
@@ -108,6 +109,14 @@ class ElementView(discord.ui.View):
             btn.callback = self._make_callback(elem)
             self.add_item(btn)
 
+        stop_btn = discord.ui.Button(
+            label="⏹️ Stop",
+            style=discord.ButtonStyle.danger,
+            custom_id="elem_stop"
+        )
+        stop_btn.callback = self._stop_callback
+        self.add_item(stop_btn)
+
     def _make_callback(self, element: str):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.acting_user_id:
@@ -117,6 +126,14 @@ class ElementView(discord.ui.View):
             self.stop()
             await interaction.response.defer()
         return callback
+
+    async def _stop_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.acting_user_id:
+            await interaction.response.send_message("This isn't your battle!", ephemeral=True)
+            return
+        self.stopped = True
+        self.stop()
+        await interaction.response.defer()
 
 
 class PostBossView(discord.ui.View):
@@ -271,13 +288,25 @@ class RPGCog(commands.Cog):
 
             await view.wait()
 
+            if view.stopped:
+                # Player clicked Stop — pause the battle
+                db.update_player(ctx.author.id, paused_battle=state)
+                active_battles.pop(channel.id, None)
+                clear_background_for_battle(str(battle_id))
+                await channel.send(
+                    f"⏹️ **{ctx.author.display_name}** stopped the battle. "
+                    f"Type `!rpgcontinue` to resume anytime!"
+                )
+                return
+
             if view.chosen is None:
                 # Timed out — pause the battle
                 db.update_player(ctx.author.id, paused_battle=state)
                 active_battles.pop(channel.id, None)
+                clear_background_for_battle(str(battle_id))
                 await channel.send(
                     f"⏸️ **{ctx.author.display_name}** didn't respond in time. "
-                    f"Battle paused! Type `!rpg` to resume."
+                    f"Battle paused! Type `!rpgcontinue` to resume."
                 )
                 return
 
@@ -521,29 +550,14 @@ class RPGCog(commands.Cog):
                 embed=None, view=None
             )
 
-        # ── Check for paused battle ────────────────────────────────────────
+        # ── Notify if paused battle exists ────────────────────────────────
         paused = player.get("paused_battle")
         if paused and opponent is None:
-            resume_view = ResumeView(user_id=user.id)
-            prompt = await ctx.send(
-                f"⏸️ You have a **paused session**! Would you like to continue or abandon it?",
-                view=resume_view
+            await ctx.send(
+                f"⏸️ You have a paused battle! Type `!rpgcontinue` to resume it, "
+                f"or `!rpgcontinue abandon` to start fresh."
             )
-            await resume_view.wait()
-            await prompt.delete()
-
-            if resume_view.decision == "abandon" or resume_view.decision is None:
-                db.update_player(user.id, paused_battle=None)
-                db.reset_hp(user.id)
-                player = db.get_player(user.id)
-                await ctx.send("🗑️ Abandoned. Starting fresh — pick a new fight!")
-            else:
-                # Resume → just start a new PvE fight
-                # (full mid-battle resume would require pickling state; this restores post-win flow)
-                db.update_player(user.id, paused_battle=None)
-                db.reset_hp(user.id)
-                player = db.get_player(user.id)
-                await ctx.send("▶️ Resuming! Sending you into a new fight...")
+            return
 
         # ── PvP duel: !rpg @user ───────────────────────────────────────────
         if opponent:
@@ -614,6 +628,54 @@ class RPGCog(commands.Cog):
         db.reset_hp(user.id)
         player = db.get_player(user.id)   # refresh after reset
         await self._run_pve_battle(ctx, player, enemy)
+
+    # ── !rpgcontinue command ─────────────────────────────────────────────────
+    @commands.command(name="rpgcontinue")
+    async def rpgcontinue(self, ctx: commands.Context, action: str = None):
+        user    = ctx.author
+        channel = ctx.channel
+
+        if channel.id in active_battles:
+            await ctx.send("⚔️ A battle is already running in this channel!")
+            return
+
+        player = db.get_player(user.id)
+        if not player:
+            await ctx.send("❌ You haven't registered yet! Type `!rpg` to begin.")
+            return
+
+        paused = player.get("paused_battle")
+        if not paused:
+            await ctx.send("❌ You don't have a paused battle. Type `!rpg` to start one!")
+            return
+
+        if action and action.lower() == "abandon":
+            db.update_player(user.id, paused_battle=None)
+            db.reset_hp(user.id)
+            await ctx.send("🗑️ Paused battle abandoned. Type `!rpg` to start fresh!")
+            return
+
+        # Resume — show confirm view
+        resume_view = ResumeView(user_id=user.id)
+        prompt = await ctx.send(
+            f"⏸️ You have a paused battle! Would you like to continue or abandon it?",
+            view=resume_view
+        )
+        await resume_view.wait()
+        await prompt.delete()
+
+        if resume_view.decision == "abandon" or resume_view.decision is None:
+            db.update_player(user.id, paused_battle=None)
+            db.reset_hp(user.id)
+            player = db.get_player(user.id)
+            await ctx.send("🗑️ Abandoned. Type `!rpg` to start a new fight!")
+        else:
+            db.update_player(user.id, paused_battle=None)
+            db.reset_hp(user.id)
+            player = db.get_player(user.id)
+            await ctx.send("▶️ Resuming! Sending you into a new fight...")
+            enemy = random.choice(AVAILABLE_ENEMIES)
+            await self._run_pve_battle(ctx, player, enemy)
 
     # ── !stats command ────────────────────────────────────────────────────────
     @commands.command(name="stats")

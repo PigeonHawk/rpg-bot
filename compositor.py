@@ -11,8 +11,8 @@ TEMP_DIR        = Path("temp")
 TEMP_DIR.mkdir(exist_ok=True)
 
 # Canvas size — bigger for Discord
-CANVAS_W = 800
-CANVAS_H = 340
+CANVAS_W = 1024
+CANVAS_H = 500
 
 # ── Background cache — locked per battle_id ───────────────────────────────────
 _bg_cache: dict = {}
@@ -98,7 +98,10 @@ def _draw_stat_card(canvas, x, y, name, level, hp, max_hp, mp, max_mp, width=180
     cd.rectangle([bar_x, mp_bar_y, bar_x + int(bar_w * mp_pct), mp_bar_y + bar_h], fill=COL_MP_BLUE)
     cd.text((8, mp_bar_y + 11), f"MP {mp}/{max_mp}", font=FONT_SMALL, fill=COL_WHITE)
 
-    canvas.paste(card, (x, y), card)
+    card_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    card_layer.paste(card, (x, y))
+    canvas_ref = Image.alpha_composite(canvas, card_layer)
+    canvas.paste(canvas_ref, (0, 0))
 
 # ── Main compositor ───────────────────────────────────────────────────────────
 def render_battle_frame(
@@ -123,8 +126,8 @@ def render_battle_frame(
         canvas = Image.new("RGBA", (CANVAS_W, CANVAS_H), (20, 15, 40, 255))
 
     # ── Sprites ───────────────────────────────────────────────────────────
-    sprite_size = (120, 120)
-    sprite_y    = CANVAS_H - sprite_size[1] - 20
+    sprite_size = (180, 180)
+    sprite_y    = CANVAS_H - sprite_size[1] - 25
 
     enemy_folder  = AVATARS_DIR if right_is_player else ENEMIES_DIR
     player_folder = AVATARS_DIR
@@ -134,15 +137,19 @@ def render_battle_frame(
     enemy_img  = _load_sprite(right_sprite, enemy_folder,  flip=True,  size=sprite_size)
     player_img = _load_sprite(left_sprite,  player_folder, flip=False, size=sprite_size)
 
-    enemy_sprite_x  = 60
-    player_sprite_x = CANVAS_W - sprite_size[0] - 60
+    enemy_sprite_x  = 80
+    player_sprite_x = CANVAS_W - sprite_size[0] - 80
 
-    canvas.paste(enemy_img,  (enemy_sprite_x,  sprite_y), enemy_img)
-    canvas.paste(player_img, (player_sprite_x, sprite_y), player_img)
+    enemy_layer  = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
+    player_layer = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
+    enemy_layer.paste(enemy_img,   (enemy_sprite_x,  sprite_y))
+    player_layer.paste(player_img, (player_sprite_x, sprite_y))
+    canvas = Image.alpha_composite(canvas, enemy_layer)
+    canvas = Image.alpha_composite(canvas, player_layer)
 
     # ── Stat cards ────────────────────────────────────────────────────────
-    card_w = 180
-    card_y = sprite_y - 74
+    card_w = 220
+    card_y = sprite_y - 84
 
     _draw_stat_card(canvas,
                     x=enemy_sprite_x - 20, y=card_y,
@@ -159,8 +166,8 @@ def render_battle_frame(
                     width=card_w)
 
     # ── VS badge ──────────────────────────────────────────────────────────
-    vs_x = CANVAS_W // 2 - 18
-    vs_y = sprite_y + 40
+    vs_x = CANVAS_W // 2 - 22
+    vs_y = sprite_y + 70
     badge = Image.new("RGBA", (36, 36), (10, 8, 20, 220))
     bd = ImageDraw.Draw(badge)
     bd.ellipse([0, 0, 35, 35], outline=(140, 90, 255, 200), width=2)
@@ -169,5 +176,5 @@ def render_battle_frame(
 
     # ── Save ──────────────────────────────────────────────────────────────
     out_path = TEMP_DIR / f"battle_{battle_id}.png"
-    canvas.convert("RGB").save(out_path, "PNG", optimize=True)
+    canvas.save(out_path, "PNG", optimize=True)
     return out_path
