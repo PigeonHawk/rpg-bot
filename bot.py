@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-TOKEN = "MTUwMDY2NTk0NDk0NTU5NDQ2OQ.GdNHqZ.KYVgHfFAJUtAzxYKrpLtPeQsJvmJV0vBUH0K5U"   # Replace with your bot token
+TOKEN = "YOUR_BOT_TOKEN_HERE"   # Replace with your bot token
 PREFIX = "!"
 GUILD_ID = None                  # Set to your server ID (int) to restrict commands, or leave None
 
@@ -21,6 +21,7 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 async def main():
     async with bot:
         await bot.load_extension("cogs.rpg")
+        await bot.load_extension("cogs.tt")
         await bot.start(TOKEN)
 
 @bot.event
