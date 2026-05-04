@@ -83,7 +83,7 @@ def _weighted_pull() -> dict:
 
 # ── Card image renderer ───────────────────────────────────────────────────────
 def _render_card(card: dict, size=(200, 260)) -> Image.Image:
-    """Render a single card as a PIL Image."""
+    """Render a single card as a PIL Image — clean artwork only, no overlays."""
     W, H = size
     img = Image.new("RGBA", (W, H), (20, 15, 40, 255))
     d   = ImageDraw.Draw(img)
@@ -102,45 +102,15 @@ def _render_card(card: dict, size=(200, 260)) -> Image.Image:
         border = (160, 160, 160)   # grey
     d.rectangle([0, 0, W-1, H-1], outline=border, width=3)
 
-    # Card image
+    # Card image — fill the entire card area cleanly
     card_path = CARDS_DIR / card["image"]
     if card_path.exists():
         try:
             art = Image.open(card_path).convert("RGBA")
-            art = art.resize((W-6, 140), Image.LANCZOS)
+            art = art.resize((W-6, H-6), Image.LANCZOS)
             img.paste(art, (3, 3), art)
         except:
             pass
-
-    # Dark overlay for text area
-    d.rectangle([0, 145, W, H], fill=(10, 8, 20, 230))
-    d.line([0, 145, W, 145], fill=border, width=2)
-
-    # Name
-    name = card["name"]
-    if len(name) > 12:
-        name = name[:11] + "."
-    d.text((8, 150), name, font=FONT_MD, fill=(240, 192, 64))
-
-    # Level stars
-    stars = "★" * min(level, 5) + "☆" * (5 - min(level, 5))
-    d.text((8, 170), stars, font=FONT_SM, fill=border)
-
-    # Values — T/R/B/L
-    top_val    = "A" if card["top"]    == 10 else str(card["top"])
-    right_val  = "A" if card["right"]  == 10 else str(card["right"])
-    bottom_val = "A" if card["bottom"] == 10 else str(card["bottom"])
-    left_val   = "A" if card["left"]   == 10 else str(card["left"])
-
-    d.text((W//2 - 6, 185), top_val,    font=FONT_LG, fill=(255,255,255))
-    d.text((W-20,     205), right_val,  font=FONT_LG, fill=(255,255,255))
-    d.text((W//2 - 6, 225), bottom_val, font=FONT_LG, fill=(255,255,255))
-    d.text((4,        205), left_val,   font=FONT_LG, fill=(255,255,255))
-
-    # Element
-    elem = card.get("element", "none")
-    if elem != "none":
-        d.text((W-20, 150), ELEMENT_EMOJI.get(elem, ""), font=FONT_SM, fill=(255,255,255))
 
     return img
 
