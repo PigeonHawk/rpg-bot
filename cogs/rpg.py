@@ -227,11 +227,44 @@ class RPGCog(commands.Cog):
             right_is_player= right_is_player,
         )
 
-        # Build embed
+        # ── Build embed ───────────────────────────────────────────────────
         turn_label = state.get("turn_label", "Your turn")
         embed = discord.Embed(color=0x7c3aed)
         embed.set_author(name=f"⚔️  {state['p1_name']}  vs  {state['p2_name']}")
         embed.set_image(url="attachment://battle.png")
+
+        # ── HP/MP bars as text below the image ───────────────────────────
+        def make_bar(current, maximum, length=16, fill="█", empty="░"):
+            filled = round((current / maximum) * length)
+            filled = max(0, min(length, filled))
+            return fill * filled + empty * (length - filled)
+
+        p1_hp_bar  = make_bar(state["p1_hp"], MAX_HP)
+        p1_mp_bar  = make_bar(state["p1_mp"], MAX_MP)
+        p2_hp_bar  = make_bar(state["p2_hp"], MAX_HP)
+        p2_mp_bar  = make_bar(state["p2_mp"], MAX_MP)
+
+        p1_hp_col  = "🟩" if state["p1_hp"] > MAX_HP * 0.3 else "🟥"
+        p2_hp_col  = "🟩" if state["p2_hp"] > MAX_HP * 0.3 else "🟥"
+
+        enemy_stats = (
+            f"**{state['p2_name']}**  ·  LV{state['p2_level']}
+"
+            f"{p2_hp_col} HP `{p2_hp_bar}` {state['p2_hp']}/{MAX_HP}
+"
+            f"🟦 MP `{p2_mp_bar}` {state['p2_mp']}/{MAX_MP}"
+        )
+        player_stats = (
+            f"**{state['p1_name']}**  ·  LV{state['p1_level']}
+"
+            f"{p1_hp_col} HP `{p1_hp_bar}` {state['p1_hp']}/{MAX_HP}
+"
+            f"🟦 MP `{p1_mp_bar}` {state['p1_mp']}/{MAX_MP}"
+        )
+
+        embed.add_field(name="👾 Enemy", value=enemy_stats, inline=True)
+        embed.add_field(name="​", value="​", inline=True)   # spacer
+        embed.add_field(name="🧙 Player", value=player_stats, inline=True)
 
         # Battle log
         log_text = "\n".join(log_lines[-4:]) if log_lines else "Battle begins!"
