@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import data_manager as db
-from compositor import render_battle_frame
+from compositor import render_battle_frame, clear_background_for_battle
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 MAX_HP      = 50
@@ -315,6 +315,7 @@ class RPGCog(commands.Cog):
 
         # ── Battle over ───────────────────────────────────────────────────────
         active_battles.pop(channel.id, None)
+        clear_background_for_battle(str(battle_id))
         state["turn_label"] = "Battle Over!"
 
         if state["p1_hp"] > 0:
@@ -457,6 +458,7 @@ class RPGCog(commands.Cog):
 
         # ── Duel over ─────────────────────────────────────────────────────────
         active_battles.pop(channel.id, None)
+        clear_background_for_battle(str(battle_id))
         state["turn_label"] = "Duel Over!"
 
         if state["p1_hp"] > 0:
