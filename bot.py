@@ -4,9 +4,9 @@ import json
 import os
 import asyncio
 from pathlib import Path
-from dotenv import load_dotenv
 
-load_dotenv()
+
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "!"
 GUILD_ID = None
