@@ -31,7 +31,7 @@ def tt_get(user_id: int) -> dict | None:
 
 def tt_register(user_id: int, username: str, cards: list) -> dict:
     data = _tt_load()
-    player = {"id": user_id, "username": username, "gil": 200, "tt_cards": cards, "last_daily": 0}
+    player = {"id": user_id, "username": username, "gil": 200, "tt_cards": cards, "last_daily": 0, "decks": [[], [], []]}
     data[str(user_id)] = player
     _tt_save(data)
     return player
@@ -91,8 +91,13 @@ CPU_NORMAL_POOL = [c for c in ALL_CARDS if 2 <= c["level"] <= 6]
 CPU_HARD_POOL   = [c for c in ALL_CARDS if c["level"] >= 5]
 
 # ── Daily gil reward ──────────────────────────────────────────────────────────
-DAILY_GIL     = 100
+DAILY_GIL      = 100
 DAILY_COOLDOWN = 86400  # 24 hours in seconds
+
+# ── Deck system ───────────────────────────────────────────────────────────────
+MAX_DECKS      = 3
+DECK_SIZE      = 5
+DECK_NAMES     = ["Deck 1", "Deck 2", "Deck 3"]
 
 # ── Active TT games ───────────────────────────────────────────────────────────
 active_tt: dict[int, dict] = {}
@@ -264,6 +269,62 @@ class SquareSelectView(discord.ui.View):
             await interaction.response.defer()
         return cb
 
+# ── Deck select view — pick which deck to play ───────────────────────────────
+class DeckSelectView(discord.ui.View):
+    def __init__(self, player: dict, user_id: int):
+        super().__init__(timeout=30)
+        self.user_id = user_id
+        self.chosen  = None  # list of card dicts
+        decks = player.get("decks", [[], [], []])
+        owned = set(player.get("tt_cards", []))
+
+        for i, deck in enumerate(decks):
+            # Validate deck — only include cards still owned
+            valid = [c for c in deck if c in owned]
+            if len(valid) == DECK_SIZE:
+                label = f"Deck {i+1} ({DECK_SIZE} cards)"
+                style = discord.ButtonStyle.success
+            elif valid:
+                label = f"Deck {i+1} ({len(valid)}/{DECK_SIZE} cards)"
+                style = discord.ButtonStyle.secondary
+            else:
+                label = f"Deck {i+1} (empty)"
+                style = discord.ButtonStyle.secondary
+
+            btn = discord.ui.Button(label=label, style=style, row=0)
+            btn.callback = self._make_cb(i, valid)
+            self.add_item(btn)
+
+        # Random option always available
+        rand_btn = discord.ui.Button(label="🎲 Random", style=discord.ButtonStyle.primary, row=0)
+        rand_btn.callback = self._random_cb
+        self.add_item(rand_btn)
+
+    def _make_cb(self, deck_idx: int, valid_cards: list):
+        async def cb(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your choice!", ephemeral=True)
+                return
+            if len(valid_cards) < DECK_SIZE:
+                await interaction.response.send_message(
+                    f"Deck {deck_idx+1} does not have {DECK_SIZE} cards! Build it with `!ttdeck {deck_idx+1} set`.",
+                    ephemeral=True
+                )
+                return
+            cards = [CARD_BY_NAME[n] for n in valid_cards if n in CARD_BY_NAME]
+            self.chosen = cards
+            self.stop()
+            await interaction.response.defer()
+        return cb
+
+    async def _random_cb(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This is not your choice!", ephemeral=True)
+            return
+        self.chosen = "random"
+        self.stop()
+        await interaction.response.defer()
+
 # ── Board renderer ────────────────────────────────────────────────────────────
 def _render_board(board: list, owners: list, p1_name: str, p2_name: str,
                   p1_score: int, p2_score: int) -> Path:
@@ -337,6 +398,14 @@ def _do_flips(board, owners, placed_idx, placed_card, placed_owner):
             owners[adj_idx] = placed_owner
             flipped.append(adj_card["name"])
     return flipped
+
+# ── Shared delete helper ─────────────────────────────────────────────────────
+async def _delete_msg(message, delay=2):
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except:
+        pass
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
 class TTCog(commands.Cog):
@@ -568,35 +637,72 @@ class TTCog(commands.Cog):
                 await ctx.send(f"❌ **{opponent.display_name}** declined the challenge!")
                 return
 
-            await self._run_tt(ctx, player, cards, actual_opponent, opp_data, opp_cards)
+            # Let challenger pick their deck
+            deck_view = DeckSelectView(player, ctx.author.id)
+            deck_prompt = await ctx.send(
+                "Which deck do you want to use for this duel?",
+                view=deck_view
+            )
+            await deck_view.wait()
+            asyncio.create_task(_delete_msg(deck_prompt))
+
+            if deck_view.chosen is None:
+                await ctx.send("Timed out! Match cancelled.")
+                return
+
+            if deck_view.chosen == "random":
+                p1_hand = random.sample(cards, min(5, len(cards)))
+            else:
+                p1_hand = deck_view.chosen
+
+            await self._run_tt(ctx, player, cards, actual_opponent, opp_data, opp_cards, p1_hand=p1_hand)
         else:
             # vs CPU — pick pool based on difficulty
             if difficulty == "easy":
                 pool = CPU_EASY_POOL
-                diff_label = "🟢 Easy"
+                diff_label = "Easy"
             elif difficulty == "hard":
                 pool = CPU_HARD_POOL
-                diff_label = "🔴 Hard"
+                diff_label = "Hard"
             else:
                 pool = CPU_NORMAL_POOL
-                diff_label = "🟡 Normal"
+                diff_label = "Normal"
 
             if len(pool) < 5:
                 pool = ALL_CARDS
             cpu_pool = random.sample(pool, 5)
-            await ctx.send(f"⚔️ Starting a **{diff_label}** CPU match!", delete_after=3)
-            await self._run_tt(ctx, player, cards, None, None, cpu_pool)
+
+            # Let player pick their deck
+            deck_view = DeckSelectView(player, ctx.author.id)
+            deck_prompt = await ctx.send(
+                f"Which deck do you want to use for this {diff_label} match?",
+                view=deck_view
+            )
+            await deck_view.wait()
+            asyncio.create_task(_delete_msg(deck_prompt))
+
+            if deck_view.chosen is None:
+                await ctx.send("Timed out! Match cancelled.")
+                return
+
+            if deck_view.chosen == "random":
+                p1_hand = random.sample(cards, min(5, len(cards)))
+            else:
+                p1_hand = deck_view.chosen
+
+            await self._run_tt(ctx, player, cards, None, None, cpu_pool, p1_hand=p1_hand)
 
     # ── TT game engine ────────────────────────────────────────────────────────
     async def _run_tt(self, ctx, p1_data, p1_all_cards,
-                      p2_member, p2_data, p2_all_cards):
+                      p2_member, p2_data, p2_all_cards, p1_hand=None):
 
         channel  = ctx.channel
         p1_id    = ctx.author.id
         p2_is_cpu = p2_member is None
 
-        # Pick 5 card hands
-        p1_hand = random.sample(p1_all_cards, 5)
+        # Pick 5 card hands — use provided deck or random
+        if p1_hand is None:
+            p1_hand = random.sample(p1_all_cards, min(5, len(p1_all_cards)))
         p2_hand = random.sample(p2_all_cards, 5)
 
         p1_name = p1_data["username"]
@@ -653,13 +759,6 @@ class TTCog(commands.Cog):
                 sq    = random.choice(empty)
             else:
                 # Helper to delete a message after 2 seconds in background
-                async def delete_after(message, delay=2):
-                    await asyncio.sleep(delay)
-                    try:
-                        await message.delete()
-                    except:
-                        pass
-
                 # Player picks card
                 card_view = CardSelectView(current_hand, current_id)
                 card_prompt = await channel.send(
@@ -667,7 +766,7 @@ class TTCog(commands.Cog):
                     view=card_view
                 )
                 await card_view.wait()
-                asyncio.create_task(delete_after(card_prompt))
+                asyncio.create_task(_delete_msg(card_prompt))
 
                 if card_view.chosen is None:
                     active_tt.pop(channel.id, None)
@@ -682,7 +781,7 @@ class TTCog(commands.Cog):
                     view=sq_view
                 )
                 await sq_view.wait()
-                asyncio.create_task(delete_after(sq_prompt))
+                asyncio.create_task(_delete_msg(sq_prompt))
 
                 if sq_view.chosen is None:
                     active_tt.pop(channel.id, None)
@@ -790,6 +889,171 @@ class TTCog(commands.Cog):
 
         await channel.send(result_msg)
 
+    # ── !ttdeck ───────────────────────────────────────────────────────────────
+    @commands.command(name="ttdeck")
+    async def ttdeck(self, ctx: commands.Context, deck_num: int = None, action: str = None):
+        player = tt_get(ctx.author.id)
+        if not player:
+            await ctx.send("❌ Register with `!ttregister` first!")
+            return
+
+        decks = player.get("decks", [[], [], []])
+        owned = player.get("tt_cards", [])
+
+        # !ttdeck — show all decks
+        if deck_num is None:
+            embed = discord.Embed(title="🃏 Your Decks", color=0x7c3aed)
+            for i, deck in enumerate(decks):
+                valid = [c for c in deck if c in owned]
+                if valid:
+                    cards = [CARD_BY_NAME[n] for n in valid if n in CARD_BY_NAME]
+                    val = "\n".join(f"`{c['name']}` — {c['top']}/{c['right']}/{c['bottom']}/{c['left']}" for c in cards)
+                    status = "✅ Ready" if len(valid) == DECK_SIZE else f"⚠️ {len(valid)}/{DECK_SIZE} cards"
+                else:
+                    val = "*Empty*"
+                    status = "❌ Empty"
+                embed.add_field(
+                    name=f"Deck {i+1} — {status}",
+                    value=val,
+                    inline=False
+                )
+            embed.set_footer(text="Use !ttdeck <1/2/3> set to build a deck  |  !ttdeck <1/2/3> clear to reset")
+            await ctx.send(embed=embed)
+            return
+
+        if deck_num not in (1, 2, 3):
+            await ctx.send("❌ Deck number must be 1, 2 or 3!")
+            return
+
+        deck_idx = deck_num - 1
+
+        # !ttdeck <n> clear
+        if action and action.lower() == "clear":
+            decks[deck_idx] = []
+            tt_update(ctx.author.id, decks=decks)
+            await ctx.send(f"🗑️ Deck {deck_num} cleared!")
+            return
+
+        # !ttdeck <n> set — interactive card picker
+        if action and action.lower() == "set":
+            if len(owned) < DECK_SIZE:
+                await ctx.send(f"❌ You need at least {DECK_SIZE} cards to build a deck! Use `!ttgacha` to get more.")
+                return
+
+            chosen_names = []
+            remaining = [CARD_BY_NAME[n] for n in owned if n in CARD_BY_NAME]
+
+            build_msg = f"Building Deck {deck_num} — pick {DECK_SIZE} cards one at a time! Type cancel at any time to stop."
+            await ctx.send(build_msg, delete_after=5)
+
+            for pick_num in range(1, DECK_SIZE + 1):
+                # Show cards in pages of 20 buttons max
+                available = [c for c in remaining if c["name"] not in chosen_names]
+
+                class CardPickView(discord.ui.View):
+                    def __init__(self, cards, user_id, page=0):
+                        super().__init__(timeout=60)
+                        self.user_id  = user_id
+                        self.chosen   = None
+                        self.page     = page
+                        self.all_cards = cards
+                        self.cancelled = False
+                        self._build(page)
+
+                    def _build(self, page):
+                        self.clear_items()
+                        start = page * 4
+                        page_cards = self.all_cards[start:start+4]
+                        for card in page_cards:
+                            lbl = f"{card['name']} ({card['top']}/{card['right']}/{card['bottom']}/{card['left']})"
+                            btn = discord.ui.Button(label=lbl[:80], style=discord.ButtonStyle.primary, row=0)
+                            btn.callback = self._make_cb(card)
+                            self.add_item(btn)
+                        # Pagination
+                        if page > 0:
+                            prev = discord.ui.Button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=1)
+                            prev.callback = self._prev_cb
+                            self.add_item(prev)
+                        if start + 4 < len(self.all_cards):
+                            nxt = discord.ui.Button(label="Next ▶", style=discord.ButtonStyle.secondary, row=1)
+                            nxt.callback = self._next_cb
+                            self.add_item(nxt)
+                        cancel = discord.ui.Button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=1)
+                        cancel.callback = self._cancel_cb
+                        self.add_item(cancel)
+
+                    def _make_cb(self, card):
+                        async def cb(interaction: discord.Interaction):
+                            if interaction.user.id != self.user_id:
+                                await interaction.response.send_message("Not your deck!", ephemeral=True)
+                                return
+                            self.chosen = card
+                            self.stop()
+                            await interaction.response.defer()
+                        return cb
+
+                    async def _prev_cb(self, interaction: discord.Interaction):
+                        if interaction.user.id != self.user_id:
+                            await interaction.response.send_message("Not your deck!", ephemeral=True)
+                            return
+                        self.page -= 1
+                        self._build(self.page)
+                        await interaction.response.edit_message(view=self)
+
+                    async def _next_cb(self, interaction: discord.Interaction):
+                        if interaction.user.id != self.user_id:
+                            await interaction.response.send_message("Not your deck!", ephemeral=True)
+                            return
+                        self.page += 1
+                        self._build(self.page)
+                        await interaction.response.edit_message(view=self)
+
+                    async def _cancel_cb(self, interaction: discord.Interaction):
+                        if interaction.user.id != self.user_id:
+                            await interaction.response.send_message("Not your deck!", ephemeral=True)
+                            return
+                        self.cancelled = True
+                        self.stop()
+                        await interaction.response.defer()
+
+                so_far = ", ".join(chosen_names) if chosen_names else "none yet"
+                pick_view = CardPickView(available, ctx.author.id)
+                pick_msg  = await ctx.send(
+                    f"Pick card **{pick_num}/{DECK_SIZE}** — chosen so far: {so_far}",
+                    view=pick_view
+                )
+                await pick_view.wait()
+
+                async def del_msg():
+                    await asyncio.sleep(2)
+                    try:
+                        await pick_msg.delete()
+                    except:
+                        pass
+                asyncio.create_task(del_msg())
+
+                if pick_view.cancelled or pick_view.chosen is None:
+                    await ctx.send("❌ Deck building cancelled!")
+                    return
+
+                chosen_names.append(pick_view.chosen["name"])
+
+            # Save deck
+            decks[deck_idx] = chosen_names
+            tt_update(ctx.author.id, decks=decks)
+
+            embed = discord.Embed(
+                title=f"✅ Deck {deck_num} Saved!",
+                color=0x22c55e
+            )
+            cards = [CARD_BY_NAME[n] for n in chosen_names if n in CARD_BY_NAME]
+            val = "\n".join(f"`{c['name']}` — {c['top']}/{c['right']}/{c['bottom']}/{c['left']}" for c in cards)
+            embed.add_field(name="Cards", value=val, inline=False)
+            await ctx.send(embed=embed)
+            return
+
+        await ctx.send("❌ Usage: `!ttdeck` — view  |  `!ttdeck <1/2/3> set` — build  |  `!ttdeck <1/2/3> clear` — reset")
+
     # ── !daily ────────────────────────────────────────────────────────────────
     @commands.command(name="ttdaily")
     async def ttdaily(self, ctx: commands.Context):
@@ -838,6 +1102,9 @@ class TTCog(commands.Cog):
             "`!ttgacha` — 3-card pull (500 gil)\n"
             "`!ttcollection` — View your card collection\n"
             "`!ttgil` — Check your gil balance\n"
+            "`!ttdeck` — View your decks\n"
+            "`!ttdeck <1/2/3> set` — Build a deck\n"
+            "`!ttdeck <1/2/3> clear` — Clear a deck\n"
             "`!ttdaily` — Claim 100 gil daily reward\n"
             "`!tthelp` — This help message"
         ), inline=False)
