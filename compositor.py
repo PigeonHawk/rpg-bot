@@ -10,15 +10,14 @@ ENEMIES_DIR     = Path("assets/enemies")
 TEMP_DIR        = Path("temp")
 TEMP_DIR.mkdir(exist_ok=True)
 
-# Canvas size — bigger for Discord
-CANVAS_W = 1024
-CANVAS_H = 500
+# ── Canvas ────────────────────────────────────────────────────────────────────
+CANVAS_W = 1200
+CANVAS_H = 600
 
-# ── Background cache — locked per battle_id ───────────────────────────────────
+# ── Background cache — locked per battle ──────────────────────────────────────
 _bg_cache: dict = {}
 
 def pick_background_for_battle(battle_id: str):
-    """Return the same background for the same battle every time."""
     if battle_id in _bg_cache:
         return _bg_cache[battle_id]
     bgs = list(BACKGROUNDS_DIR.glob("*.jpg")) + list(BACKGROUNDS_DIR.glob("*.png"))
@@ -29,152 +28,189 @@ def pick_background_for_battle(battle_id: str):
     return chosen
 
 def clear_background_for_battle(battle_id: str):
-    """Call when a battle ends to free the cache."""
     _bg_cache.pop(battle_id, None)
 
-# ── Font helpers ──────────────────────────────────────────────────────────────
+# ── Fonts ─────────────────────────────────────────────────────────────────────
 def _font(size: int):
-    font_paths = [
+    paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
-        "/System/Library/Fonts/Menlo.ttc",
-        "C:/Windows/Fonts/consola.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
     ]
-    for path in font_paths:
-        if os.path.exists(path):
+    for p in paths:
+        if os.path.exists(p):
             try:
-                return ImageFont.truetype(path, size)
+                return ImageFont.truetype(p, size)
             except Exception:
                 pass
     return ImageFont.load_default()
 
-FONT_NAME  = _font(15)
-FONT_SMALL = _font(12)
+FONT_LG  = _font(20)   # names
+FONT_MD  = _font(16)   # labels + values
+FONT_SM  = _font(13)   # small text
 
 # ── Colours ───────────────────────────────────────────────────────────────────
-COL_GOLD      = (240, 192, 64)
-COL_WHITE     = (220, 220, 230)
-COL_HP_GREEN  = (34,  197,  94)
-COL_HP_RED    = (239, 68,   68)
-COL_MP_BLUE   = (59,  130, 246)
-COL_CARD_BG   = (8,   6,   18, 220)
-COL_CARD_BDR  = (140, 90,  255, 180)
-COL_BAR_TRACK = (30,  30,  50,  200)
+GOLD       = (240, 192,  64)
+WHITE      = (220, 220, 230)
+PURPLE     = (167, 139, 250)
+HP_GREEN   = ( 34, 197,  94)
+HP_RED     = (239,  68,  68)
+MP_BLUE    = ( 59, 130, 246)
+TRACK      = ( 30,  30,  50, 200)
+CARD_BG    = (  8,   6,  18, 230)
+CARD_BDR   = (140,  90, 255, 200)
 
-# ── Sprite loader ─────────────────────────────────────────────────────────────
-def _load_sprite(filename, folder, flip=False, size=(120, 120)):
+# ── Sprite loader — clean transparency ───────────────────────────────────────
+def _load_sprite(filename: str, folder: Path, flip: bool = False, size=(200, 200)) -> Image.Image:
     path = folder / filename
     if not path.exists():
-        img = Image.new("RGBA", size, (100, 80, 160, 200))
-        return img
+        placeholder = Image.new("RGBA", size, (80, 60, 120, 180))
+        return placeholder
     img = Image.open(path).convert("RGBA")
     img = img.resize(size, Image.NEAREST)
     if flip:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
     return img
 
+# ── Composite sprite onto canvas with no black box ────────────────────────────
+def _paste_sprite(canvas: Image.Image, sprite: Image.Image, x: int, y: int):
+    """Paste an RGBA sprite onto an RGBA canvas using alpha compositing."""
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    layer.paste(sprite, (x, y))
+    return Image.alpha_composite(canvas, layer)
+
 # ── Stat card ─────────────────────────────────────────────────────────────────
-def _draw_stat_card(canvas, x, y, name, level, hp, max_hp, mp, max_mp, width=180):
-    card_h = 64
-    card = Image.new("RGBA", (width, card_h), COL_CARD_BG)
-    cd = ImageDraw.Draw(card)
-    cd.rectangle([0, 0, width-1, card_h-1], outline=COL_CARD_BDR, width=1)
+def _draw_stat_card(canvas: Image.Image, x: int, y: int,
+                    name: str, level: int,
+                    hp: int, max_hp: int,
+                    mp: int, max_mp: int,
+                    width: int = 260) -> Image.Image:
+    """Draw a stat card and return the updated canvas."""
+    PAD      = 12
+    NAME_H   = 28    # name row height
+    GAP      = 10    # gap between name and first bar
+    BAR_H    = 16    # bar height
+    LABEL_H  = 18    # label text height below bar
+    ROW_GAP  = 14    # gap between HP row and MP row
+    card_h   = PAD + NAME_H + GAP + BAR_H + LABEL_H + ROW_GAP + BAR_H + LABEL_H + PAD
 
-    cd.text((8, 5), name.upper(), font=FONT_NAME, fill=COL_GOLD)
-    lv_text = f"LV{level}"
-    lv_w = cd.textlength(lv_text, font=FONT_SMALL)
-    cd.text((width - lv_w - 6, 7), lv_text, font=FONT_SMALL, fill=(167, 139, 250))
+    card = Image.new("RGBA", (width, card_h), CARD_BG)
+    cd   = ImageDraw.Draw(card)
 
-    bar_x, bar_y, bar_w, bar_h = 8, 26, width - 16, 9
-    cd.rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], fill=COL_BAR_TRACK)
-    hp_pct = max(0, hp / max_hp)
-    hp_col = COL_HP_GREEN if hp_pct > 0.3 else COL_HP_RED
-    cd.rectangle([bar_x, bar_y, bar_x + int(bar_w * hp_pct), bar_y + bar_h], fill=hp_col)
-    cd.text((8, 37), f"HP {hp}/{max_hp}", font=FONT_SMALL, fill=COL_WHITE)
+    # Border
+    cd.rectangle([0, 0, width-1, card_h-1], outline=CARD_BDR, width=2)
 
-    mp_bar_y = bar_y + 16
-    cd.rectangle([bar_x, mp_bar_y, bar_x + bar_w, mp_bar_y + bar_h], fill=COL_BAR_TRACK)
-    mp_pct = max(0, mp / max_mp)
-    cd.rectangle([bar_x, mp_bar_y, bar_x + int(bar_w * mp_pct), mp_bar_y + bar_h], fill=COL_MP_BLUE)
-    cd.text((8, mp_bar_y + 11), f"MP {mp}/{max_mp}", font=FONT_SMALL, fill=COL_WHITE)
+    # Name
+    cd.text((PAD, PAD), name.upper(), font=FONT_LG, fill=GOLD)
+    lv = f"LV{level}"
+    lv_w = int(cd.textlength(lv, font=FONT_MD))
+    cd.text((width - lv_w - PAD, PAD + 2), lv, font=FONT_MD, fill=PURPLE)
 
-    card_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    card_layer.paste(card, (x, y))
-    canvas_ref = Image.alpha_composite(canvas, card_layer)
-    canvas.paste(canvas_ref, (0, 0))
+    # ── HP row ────────────────────────────────────────────────────────────
+    hp_bar_y = PAD + NAME_H + GAP
+    bar_x    = PAD
+    bar_w    = width - PAD * 2
 
-# ── Main compositor ───────────────────────────────────────────────────────────
+    # Track
+    cd.rectangle([bar_x, hp_bar_y, bar_x + bar_w, hp_bar_y + BAR_H], fill=TRACK)
+    # Fill
+    hp_pct = max(0.0, hp / max_hp)
+    hp_col = HP_GREEN if hp_pct > 0.3 else HP_RED
+    fill_w = int(bar_w * hp_pct)
+    if fill_w > 0:
+        cd.rectangle([bar_x, hp_bar_y, bar_x + fill_w, hp_bar_y + BAR_H], fill=hp_col)
+    # Label BELOW the bar
+    cd.text((bar_x, hp_bar_y + BAR_H + 2), f"HP  {hp} / {max_hp}", font=FONT_SM, fill=WHITE)
+
+    # ── MP row ────────────────────────────────────────────────────────────
+    mp_bar_y = hp_bar_y + BAR_H + LABEL_H + ROW_GAP
+    cd.rectangle([bar_x, mp_bar_y, bar_x + bar_w, mp_bar_y + BAR_H], fill=TRACK)
+    mp_pct = max(0.0, mp / max_mp)
+    fill_w = int(bar_w * mp_pct)
+    if fill_w > 0:
+        cd.rectangle([bar_x, mp_bar_y, bar_x + fill_w, mp_bar_y + BAR_H], fill=MP_BLUE)
+    cd.text((bar_x, mp_bar_y + BAR_H + 2), f"MP  {mp} / {max_mp}", font=FONT_SM, fill=WHITE)
+
+    # Paste card onto canvas cleanly
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    layer.paste(card, (x, y))
+    return Image.alpha_composite(canvas, layer)
+
+# ── VS badge ──────────────────────────────────────────────────────────────────
+def _draw_vs(canvas: Image.Image) -> Image.Image:
+    size   = 52
+    cx, cy = CANVAS_W // 2 - size // 2, CANVAS_H // 2 - size // 2 + 40
+    badge  = Image.new("RGBA", (size, size), (10, 8, 20, 230))
+    bd     = ImageDraw.Draw(badge)
+    bd.ellipse([0, 0, size-1, size-1], outline=(140, 90, 255, 220), width=2)
+    vs_w = int(bd.textlength("VS", font=FONT_MD))
+    bd.text(((size - vs_w) // 2, 14), "VS", font=FONT_MD, fill=PURPLE)
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    layer.paste(badge, (cx, cy))
+    return Image.alpha_composite(canvas, layer)
+
+# ── Main render ───────────────────────────────────────────────────────────────
 def render_battle_frame(
     battle_id,
-    left_name, left_level, left_hp, left_max_hp, left_mp, left_max_mp, left_sprite,
+    left_name,  left_level,  left_hp,  left_max_hp,  left_mp,  left_max_mp,  left_sprite,
     right_name, right_level, right_hp, right_max_hp, right_mp, right_max_mp, right_sprite,
     right_is_player=False,
     background=None,
 ):
-    # ── Background locked per battle ─────────────────────────────────────
-    if background:
-        bg_path = BACKGROUNDS_DIR / background
-    else:
-        bg_path = pick_background_for_battle(str(battle_id))
+    # ── Background ────────────────────────────────────────────────────────
+    bg_path = BACKGROUNDS_DIR / background if background else pick_background_for_battle(str(battle_id))
 
-    if bg_path and bg_path.exists():
+    if bg_path and Path(bg_path).exists():
         bg = Image.open(bg_path).convert("RGBA")
         bg = bg.resize((CANVAS_W, CANVAS_H), Image.LANCZOS)
-        darkener = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 80))
-        canvas = Image.alpha_composite(bg, darkener)
+        dark = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 85))
+        canvas = Image.alpha_composite(bg, dark)
     else:
         canvas = Image.new("RGBA", (CANVAS_W, CANVAS_H), (20, 15, 40, 255))
 
-    # ── Sprites ───────────────────────────────────────────────────────────
-    sprite_size = (180, 180)
-    sprite_y    = CANVAS_H - sprite_size[1] - 25
+    # ── Layout constants ──────────────────────────────────────────────────
+    SPRITE_W, SPRITE_H = 220, 220
+    SPRITE_Y  = CANVAS_H - SPRITE_H - 30       # sprites near bottom
+    CARD_W    = 280
+    CARD_Y    = 30                              # stat cards near top
+    MARGIN    = 60
 
+    ENEMY_X  = MARGIN                           # enemy on LEFT
+    PLAYER_X = CANVAS_W - SPRITE_W - MARGIN    # player on RIGHT
+
+    # ── Sprites ───────────────────────────────────────────────────────────
     enemy_folder  = AVATARS_DIR if right_is_player else ENEMIES_DIR
     player_folder = AVATARS_DIR
 
-    # Enemy on LEFT  → flip=True  so it faces RIGHT toward player
-    # Player on RIGHT → flip=False so it naturally faces LEFT toward enemy
-    enemy_img  = _load_sprite(right_sprite, enemy_folder,  flip=True,  size=sprite_size)
-    player_img = _load_sprite(left_sprite,  player_folder, flip=False, size=sprite_size)
+    # Enemy LEFT  → flip=True  (faces RIGHT toward player)
+    # Player RIGHT → flip=False (naturally faces LEFT toward enemy)
+    enemy_img  = _load_sprite(right_sprite, enemy_folder,  flip=True,  size=(SPRITE_W, SPRITE_H))
+    player_img = _load_sprite(left_sprite,  player_folder, flip=False, size=(SPRITE_W, SPRITE_H))
 
-    enemy_sprite_x  = 80
-    player_sprite_x = CANVAS_W - sprite_size[0] - 80
-
-    enemy_layer  = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
-    player_layer = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
-    enemy_layer.paste(enemy_img,   (enemy_sprite_x,  sprite_y))
-    player_layer.paste(player_img, (player_sprite_x, sprite_y))
-    canvas = Image.alpha_composite(canvas, enemy_layer)
-    canvas = Image.alpha_composite(canvas, player_layer)
+    canvas = _paste_sprite(canvas, enemy_img,  ENEMY_X,  SPRITE_Y)
+    canvas = _paste_sprite(canvas, player_img, PLAYER_X, SPRITE_Y)
 
     # ── Stat cards ────────────────────────────────────────────────────────
-    card_w = 220
-    card_y = sprite_y - 84
+    # Enemy card top-left
+    canvas = _draw_stat_card(canvas,
+                             x=ENEMY_X, y=CARD_Y,
+                             name=right_name, level=right_level,
+                             hp=right_hp,   max_hp=right_max_hp,
+                             mp=right_mp,   max_mp=right_max_mp,
+                             width=CARD_W)
 
-    _draw_stat_card(canvas,
-                    x=enemy_sprite_x - 20, y=card_y,
-                    name=right_name, level=right_level,
-                    hp=right_hp, max_hp=right_max_hp,
-                    mp=right_mp, max_mp=right_max_mp,
-                    width=card_w)
-
-    _draw_stat_card(canvas,
-                    x=player_sprite_x - (card_w - sprite_size[0]) + 20, y=card_y,
-                    name=left_name, level=left_level,
-                    hp=left_hp, max_hp=left_max_hp,
-                    mp=left_mp, max_mp=left_max_mp,
-                    width=card_w)
+    # Player card top-right
+    canvas = _draw_stat_card(canvas,
+                             x=PLAYER_X + SPRITE_W - CARD_W, y=CARD_Y,
+                             name=left_name,  level=left_level,
+                             hp=left_hp,    max_hp=left_max_hp,
+                             mp=left_mp,    max_mp=left_max_mp,
+                             width=CARD_W)
 
     # ── VS badge ──────────────────────────────────────────────────────────
-    vs_x = CANVAS_W // 2 - 22
-    vs_y = sprite_y + 70
-    badge = Image.new("RGBA", (36, 36), (10, 8, 20, 220))
-    bd = ImageDraw.Draw(badge)
-    bd.ellipse([0, 0, 35, 35], outline=(140, 90, 255, 200), width=2)
-    bd.text((6, 8), "VS", font=FONT_SMALL, fill=(167, 139, 250))
-    canvas.paste(badge, (vs_x, vs_y), badge)
+    canvas = _draw_vs(canvas)
 
-    # ── Save ──────────────────────────────────────────────────────────────
+    # ── Save as PNG keeping full RGBA — no RGB conversion ─────────────────
     out_path = TEMP_DIR / f"battle_{battle_id}.png"
-    canvas.save(out_path, "PNG", optimize=True)
+    canvas.save(str(out_path), "PNG")
     return out_path
