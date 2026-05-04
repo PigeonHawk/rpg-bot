@@ -459,6 +459,52 @@ class TTCog(commands.Cog):
             if len(opp_cards) < 5:
                 await ctx.send(f"❌ **{opponent.display_name}** doesn't have enough cards!")
                 return
+            # Send challenge with accept/decline buttons
+            class ChallengeView(discord.ui.View):
+                def __init__(self, opponent_id):
+                    super().__init__(timeout=30)
+                    self.opponent_id = opponent_id
+                    self.accepted = None
+
+                @discord.ui.button(label="✅ Accept", style=discord.ButtonStyle.success)
+                async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    if interaction.user.id != self.opponent_id:
+                        await interaction.response.send_message("This challenge is not for you!", ephemeral=True)
+                        return
+                    self.accepted = True
+                    self.stop()
+                    await interaction.response.defer()
+
+                @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
+                async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    if interaction.user.id != self.opponent_id:
+                        await interaction.response.send_message("This challenge is not for you!", ephemeral=True)
+                        return
+                    self.accepted = False
+                    self.stop()
+                    await interaction.response.defer()
+
+            desc = (
+                f"**{ctx.author.display_name}** challenges **{opponent.display_name}** to Triple Triad!\n\n"
+                f"{opponent.mention} do you accept? (30 seconds to respond)"
+            )
+            challenge_embed = discord.Embed(
+                title="🃏 Triple Triad Challenge!",
+                description=desc,
+                color=0x7c3aed
+            )
+            challenge_view = ChallengeView(opponent.id)
+            challenge_msg  = await ctx.send(embed=challenge_embed, view=challenge_view)
+            await challenge_view.wait()
+            await challenge_msg.delete()
+
+            if challenge_view.accepted is None:
+                await ctx.send(f"⏱️ **{opponent.display_name}** did not respond in time. Challenge cancelled!")
+                return
+            if not challenge_view.accepted:
+                await ctx.send(f"❌ **{opponent.display_name}** declined the challenge!")
+                return
+
             await self._run_tt(ctx, player, cards, opponent, opp_data, opp_cards)
         else:
             # vs CPU
