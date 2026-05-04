@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-TOKEN = "YOUR_BOT_TOKEN_HERE"   # Replace with your bot token
+TOKEN = os.getenv("DISCORD_TOKEN")   # Replace with your bot token
 PREFIX = "!"
 GUILD_ID = None                  # Set to your server ID (int) to restrict commands, or leave None
 
