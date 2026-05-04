@@ -31,7 +31,7 @@ def tt_get(user_id: int) -> dict | None:
 
 def tt_register(user_id: int, username: str, cards: list) -> dict:
     data = _tt_load()
-    player = {"id": user_id, "username": username, "gil": 200, "tt_cards": cards, "last_daily": 0, "decks": [[], [], []]}
+    player = {"id": user_id, "username": username, "gil": 700, "tt_cards": cards, "last_daily": 0, "decks": [[], [], []]}
     data[str(user_id)] = player
     _tt_save(data)
     return player
@@ -72,7 +72,7 @@ GACHA_RATES = {
 }
 
 # ── Gil constants ─────────────────────────────────────────────────────────────
-GACHA_COST    = 500
+GACHA_COST    = 300
 WIN_GIL_CPU   = 100
 WIN_GIL_PVP   = 100
 LOSE_GIL_CPU  =  50
@@ -497,7 +497,7 @@ class TTCog(commands.Cog):
             for c in cards
         )
         embed.add_field(name="Your Starter Cards", value=card_list, inline=False)
-        embed.set_footer(text="Starting gil: 200")
+        embed.set_footer(text="Starting gil: 700")
         await ctx.send(embed=embed)
 
     # ── !ttgacha ──────────────────────────────────────────────────────────────
@@ -598,7 +598,7 @@ class TTCog(commands.Cog):
         embed = discord.Embed(title=f"💰 {ctx.author.display_name}'s Wallet", color=0xf0c040)
         embed.add_field(name="Gil",       value=f"💰 {gil}", inline=True)
         embed.add_field(name="TT Cards",  value=f"🃏 {cards}", inline=True)
-        embed.add_field(name="Gacha",     value=f"3-pull costs 500 gil", inline=True)
+        embed.add_field(name="Gacha",     value=f"3-pull costs 300 gil", inline=True)
         await ctx.send(embed=embed)
 
     # ── !tt — main menu ──────────────────────────────────────────────────────
@@ -1189,7 +1189,7 @@ class TTCog(commands.Cog):
             "`!tt` — Main menu (duel, deck, collection, gacha)\n"
             "`!ttduel easy/norm/hard` — Play vs CPU\n"
             "`!ttduel @user` — Challenge a player\n"
-            "`!ttgacha` — 3-card pull (500 gil)\n"
+            "`!ttgacha` — 3-card pull (300 gil)\n"
             "`!ttcollection` — View your card collection\n"
             "`!ttgil` — Check your gil balance\n"
             "`!ttdeck` — View your 3 decks\n"
