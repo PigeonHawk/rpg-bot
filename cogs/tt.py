@@ -532,12 +532,17 @@ class TTCog(commands.Cog):
             else:
                 # Player picks card
                 card_view = CardSelectView(current_hand, current_id)
-                await channel.send(
+                card_prompt = await channel.send(
                     f"{(ctx.author.mention if turn == 1 else p2_member.mention)} — pick a card!",
-                    view=card_view,
-                    delete_after=70
+                    view=card_view
                 )
                 await card_view.wait()
+                # Delete prompt after 2 seconds
+                await asyncio.sleep(2)
+                try:
+                    await card_prompt.delete()
+                except:
+                    pass
 
                 if card_view.chosen is None:
                     active_tt.pop(channel.id, None)
@@ -547,12 +552,17 @@ class TTCog(commands.Cog):
 
                 # Player picks square
                 sq_view = SquareSelectView(board, current_id)
-                await channel.send(
+                sq_prompt = await channel.send(
                     f"{(ctx.author.mention if turn == 1 else p2_member.mention)} — pick a square!",
-                    view=sq_view,
-                    delete_after=70
+                    view=sq_view
                 )
                 await sq_view.wait()
+                # Delete prompt after 2 seconds
+                await asyncio.sleep(2)
+                try:
+                    await sq_prompt.delete()
+                except:
+                    pass
 
                 if sq_view.chosen is None:
                     active_tt.pop(channel.id, None)
