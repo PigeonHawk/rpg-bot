@@ -13,11 +13,11 @@ import io
 import json as _json
 from pathlib import Path as _Path
 
-TT_DATA_FILE = _Path("data/tt_players.json")
+TT_DATA_FILE = _Path("playerdata/tt_players.json")
 
 def _tt_load() -> dict:
     if not TT_DATA_FILE.exists():
-        TT_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TT_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)  # /app/playerdata on Railway Volume
         return {}
     with open(TT_DATA_FILE) as f:
         return _json.load(f)
