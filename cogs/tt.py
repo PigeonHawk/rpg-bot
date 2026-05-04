@@ -399,6 +399,70 @@ def _do_flips(board, owners, placed_idx, placed_card, placed_owner):
             flipped.append(adj_card["name"])
     return flipped
 
+# ── Card pick view factory (reusable, no nested class issue) ─────────────────
+def _make_card_pick_view(cards: list, user_id: int, page: int = 0):
+    class CardPickView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=60)
+            self.user_id   = user_id
+            self.chosen    = None   # card dict, "prev", "next", or None
+            self.cancelled = False
+            self._build()
+
+        def _build(self):
+            self.clear_items()
+            start      = page * 4
+            page_cards = cards[start:start + 4]
+            for card in page_cards:
+                lbl = f"{card['name']} ({card['top']}/{card['right']}/{card['bottom']}/{card['left']})"
+                btn = discord.ui.Button(label=lbl[:80], style=discord.ButtonStyle.primary, row=0)
+                btn.callback = self._make_cb(card)
+                self.add_item(btn)
+            if page > 0:
+                prev = discord.ui.Button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=1)
+                async def prev_cb(interaction):
+                    if interaction.user.id != user_id:
+                        await interaction.response.send_message("Not your deck!", ephemeral=True)
+                        return
+                    self.chosen = "prev"
+                    self.stop()
+                    await interaction.response.defer()
+                prev.callback = prev_cb
+                self.add_item(prev)
+            if start + 4 < len(cards):
+                nxt = discord.ui.Button(label="Next ▶", style=discord.ButtonStyle.secondary, row=1)
+                async def next_cb(interaction):
+                    if interaction.user.id != user_id:
+                        await interaction.response.send_message("Not your deck!", ephemeral=True)
+                        return
+                    self.chosen = "next"
+                    self.stop()
+                    await interaction.response.defer()
+                nxt.callback = next_cb
+                self.add_item(nxt)
+            cancel = discord.ui.Button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=1)
+            async def cancel_cb(interaction):
+                if interaction.user.id != user_id:
+                    await interaction.response.send_message("Not your deck!", ephemeral=True)
+                    return
+                self.cancelled = True
+                self.stop()
+                await interaction.response.defer()
+            cancel.callback = cancel_cb
+            self.add_item(cancel)
+
+        def _make_cb(self, card):
+            async def cb(interaction: discord.Interaction):
+                if interaction.user.id != self.user_id:
+                    await interaction.response.send_message("Not your deck!", ephemeral=True)
+                    return
+                self.chosen = card
+                self.stop()
+                await interaction.response.defer()
+            return cb
+
+    return CardPickView()
+
 # ── Shared delete helper ─────────────────────────────────────────────────────
 async def _delete_msg(message, delay=2):
     await asyncio.sleep(delay)
@@ -537,9 +601,87 @@ class TTCog(commands.Cog):
         embed.add_field(name="Gacha",     value=f"3-pull costs 500 gil", inline=True)
         await ctx.send(embed=embed)
 
-    # ── !tt ───────────────────────────────────────────────────────────────────
+    # ── !tt — main menu ──────────────────────────────────────────────────────
     @commands.command(name="tt")
-    async def tt(self, ctx: commands.Context, difficulty_or_opponent: str = None, opponent: discord.Member = None):
+    async def tt(self, ctx: commands.Context):
+        player = tt_get(ctx.author.id)
+        if not player:
+            await ctx.send("❌ Register with `!ttregister` first!")
+            return
+
+        class TTMenuView(discord.ui.View):
+            def __init__(self, user_id):
+                super().__init__(timeout=30)
+                self.user_id = user_id
+                self.choice  = None
+
+            @discord.ui.button(label="⚔️ Duel", style=discord.ButtonStyle.primary, row=0)
+            async def duel(self, interaction, button):
+                if interaction.user.id != self.user_id:
+                    await interaction.response.send_message("Not your menu!", ephemeral=True)
+                    return
+                self.choice = "duel"
+                self.stop()
+                await interaction.response.defer()
+
+            @discord.ui.button(label="🃏 Build Deck", style=discord.ButtonStyle.secondary, row=0)
+            async def build(self, interaction, button):
+                if interaction.user.id != self.user_id:
+                    await interaction.response.send_message("Not your menu!", ephemeral=True)
+                    return
+                self.choice = "deck"
+                self.stop()
+                await interaction.response.defer()
+
+            @discord.ui.button(label="📖 Collection", style=discord.ButtonStyle.secondary, row=0)
+            async def collection(self, interaction, button):
+                if interaction.user.id != self.user_id:
+                    await interaction.response.send_message("Not your menu!", ephemeral=True)
+                    return
+                self.choice = "collection"
+                self.stop()
+                await interaction.response.defer()
+
+            @discord.ui.button(label="🎰 Gacha", style=discord.ButtonStyle.success, row=0)
+            async def gacha(self, interaction, button):
+                if interaction.user.id != self.user_id:
+                    await interaction.response.send_message("Not your menu!", ephemeral=True)
+                    return
+                self.choice = "gacha"
+                self.stop()
+                await interaction.response.defer()
+
+        menu_view = TTMenuView(ctx.author.id)
+        gil = player.get("gil", 0)
+        cards_count = len(player.get("tt_cards", []))
+        embed = discord.Embed(
+            title="🃏 Triple Triad",
+            description=f"Welcome back, **{ctx.author.display_name}**! What would you like to do?",
+            color=0x7c3aed
+        )
+        embed.add_field(name="💰 Gil", value=str(gil), inline=True)
+        embed.add_field(name="🃏 Cards", value=str(cards_count), inline=True)
+        menu_msg = await ctx.send(embed=embed, view=menu_view)
+        await menu_view.wait()
+        try:
+            await menu_msg.delete()
+        except:
+            pass
+
+        if menu_view.choice is None:
+            return
+        elif menu_view.choice == "duel":
+            await ctx.send("Use `!ttduel easy/norm/hard` for CPU or `!ttduel @user` to challenge a player!")
+        elif menu_view.choice == "deck":
+            await ctx.send("Use `!ttdeck` to view decks or `!ttdeck <1/2/3> set` to build one!")
+        elif menu_view.choice == "collection":
+            await ctx.invoke(self.ttcollection)
+        elif menu_view.choice == "gacha":
+            await ctx.invoke(self.ttgacha)
+
+    # ── !ttduel ───────────────────────────────────────────────────────────────
+    @commands.command(name="ttduel")
+    async def ttduel(self, ctx: commands.Context, difficulty_or_opponent: str = None, opponent: discord.Member = None):
         player = tt_get(ctx.author.id)
         if not player:
             await ctx.send("❌ Register with `!ttregister` first!")
@@ -947,96 +1089,43 @@ class TTCog(commands.Cog):
             await ctx.send(build_msg, delete_after=5)
 
             for pick_num in range(1, DECK_SIZE + 1):
-                # Show cards in pages of 20 buttons max
                 available = [c for c in remaining if c["name"] not in chosen_names]
-
-                class CardPickView(discord.ui.View):
-                    def __init__(self, cards, user_id, page=0):
-                        super().__init__(timeout=60)
-                        self.user_id  = user_id
-                        self.chosen   = None
-                        self.page     = page
-                        self.all_cards = cards
-                        self.cancelled = False
-                        self._build(page)
-
-                    def _build(self, page):
-                        self.clear_items()
-                        start = page * 4
-                        page_cards = self.all_cards[start:start+4]
-                        for card in page_cards:
-                            lbl = f"{card['name']} ({card['top']}/{card['right']}/{card['bottom']}/{card['left']})"
-                            btn = discord.ui.Button(label=lbl[:80], style=discord.ButtonStyle.primary, row=0)
-                            btn.callback = self._make_cb(card)
-                            self.add_item(btn)
-                        # Pagination
-                        if page > 0:
-                            prev = discord.ui.Button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=1)
-                            prev.callback = self._prev_cb
-                            self.add_item(prev)
-                        if start + 4 < len(self.all_cards):
-                            nxt = discord.ui.Button(label="Next ▶", style=discord.ButtonStyle.secondary, row=1)
-                            nxt.callback = self._next_cb
-                            self.add_item(nxt)
-                        cancel = discord.ui.Button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=1)
-                        cancel.callback = self._cancel_cb
-                        self.add_item(cancel)
-
-                    def _make_cb(self, card):
-                        async def cb(interaction: discord.Interaction):
-                            if interaction.user.id != self.user_id:
-                                await interaction.response.send_message("Not your deck!", ephemeral=True)
-                                return
-                            self.chosen = card
-                            self.stop()
-                            await interaction.response.defer()
-                        return cb
-
-                    async def _prev_cb(self, interaction: discord.Interaction):
-                        if interaction.user.id != self.user_id:
-                            await interaction.response.send_message("Not your deck!", ephemeral=True)
-                            return
-                        self.page -= 1
-                        self._build(self.page)
-                        await interaction.response.edit_message(view=self)
-
-                    async def _next_cb(self, interaction: discord.Interaction):
-                        if interaction.user.id != self.user_id:
-                            await interaction.response.send_message("Not your deck!", ephemeral=True)
-                            return
-                        self.page += 1
-                        self._build(self.page)
-                        await interaction.response.edit_message(view=self)
-
-                    async def _cancel_cb(self, interaction: discord.Interaction):
-                        if interaction.user.id != self.user_id:
-                            await interaction.response.send_message("Not your deck!", ephemeral=True)
-                            return
-                        self.cancelled = True
-                        self.stop()
-                        await interaction.response.defer()
-
                 so_far = ", ".join(chosen_names) if chosen_names else "none yet"
-                pick_view = CardPickView(available, ctx.author.id)
-                pick_msg  = await ctx.send(
-                    f"Pick card **{pick_num}/{DECK_SIZE}** — chosen so far: {so_far}",
+
+                # Build paginated card picker
+                page = 0
+                pick_view = _make_card_pick_view(available, ctx.author.id, page)
+                pick_msg = await ctx.send(
+                    f"Pick card {pick_num}/{DECK_SIZE} for Deck {deck_num}. Chosen: {so_far}",
                     view=pick_view
                 )
-                await pick_view.wait()
 
-                async def del_msg():
-                    await asyncio.sleep(2)
-                    try:
-                        await pick_msg.delete()
-                    except:
-                        pass
-                asyncio.create_task(del_msg())
-
-                if pick_view.cancelled or pick_view.chosen is None:
-                    await ctx.send("❌ Deck building cancelled!")
-                    return
-
-                chosen_names.append(pick_view.chosen["name"])
+                # Handle pagination in a loop until card chosen or cancelled
+                while True:
+                    await pick_view.wait()
+                    if pick_view.cancelled or pick_view.chosen is None:
+                        try:
+                            await pick_msg.delete()
+                        except:
+                            pass
+                        await ctx.send("Deck building cancelled!")
+                        return
+                    if pick_view.chosen == "prev":
+                        page -= 1
+                        pick_view = _make_card_pick_view(available, ctx.author.id, page)
+                        await pick_msg.edit(view=pick_view)
+                    elif pick_view.chosen == "next":
+                        page += 1
+                        pick_view = _make_card_pick_view(available, ctx.author.id, page)
+                        await pick_msg.edit(view=pick_view)
+                    else:
+                        # Card chosen — delete message immediately
+                        try:
+                            await pick_msg.delete()
+                        except:
+                            pass
+                        chosen_names.append(pick_view.chosen["name"])
+                        break
 
             # Save deck
             decks[deck_idx] = chosen_names
@@ -1097,21 +1186,22 @@ class TTCog(commands.Cog):
         )
         embed.add_field(name="Commands", value=(
             "`!ttregister` — Register and get 6 starter cards\n"
-            "`!tt easy/norm/hard` — Play vs CPU (choose difficulty)\n"
-            "`!tt @user` — Challenge a player\n"
+            "`!tt` — Main menu (duel, deck, collection, gacha)\n"
+            "`!ttduel easy/norm/hard` — Play vs CPU\n"
+            "`!ttduel @user` — Challenge a player\n"
             "`!ttgacha` — 3-card pull (500 gil)\n"
             "`!ttcollection` — View your card collection\n"
             "`!ttgil` — Check your gil balance\n"
-            "`!ttdeck` — View your decks\n"
+            "`!ttdeck` — View your 3 decks\n"
             "`!ttdeck <1/2/3> set` — Build a deck\n"
             "`!ttdeck <1/2/3> clear` — Clear a deck\n"
             "`!ttdaily` — Claim 100 gil daily reward\n"
             "`!tthelp` — This help message"
         ), inline=False)
         embed.add_field(name="⚔️ CPU Difficulty", value=(
-            "🟢 `!tt easy` — Levels 1-3 cards only\n"
-            "🟡 `!tt norm` — Levels 2-6 cards\n"
-            "🔴 `!tt hard` — Levels 5-10 (rare + GF cards!)"
+            "🟢 `!ttduel easy` — Levels 1-3 cards only\n"
+            "🟡 `!ttduel norm` — Levels 2-6 cards\n"
+            "🔴 `!ttduel hard` — Levels 5-10 (rare + GF cards!)"
         ), inline=False)
         embed.add_field(name="How to Play", value=(
             "Each player picks 5 cards from their collection.\n"
