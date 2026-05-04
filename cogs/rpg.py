@@ -247,19 +247,24 @@ class RPGCog(commands.Cog):
         p1_hp_col  = "🟩" if state["p1_hp"] > MAX_HP * 0.3 else "🟥"
         p2_hp_col  = "🟩" if state["p2_hp"] > MAX_HP * 0.3 else "🟥"
 
+        p2_name = state["p2_name"]
+        p2_level = state["p2_level"]
+        p2_hp = state["p2_hp"]
+        p2_mp = state["p2_mp"]
+        p1_name = state["p1_name"]
+        p1_level = state["p1_level"]
+        p1_hp = state["p1_hp"]
+        p1_mp = state["p1_mp"]
+
         enemy_stats = (
-            f"**{state['p2_name']}**  ·  LV{state['p2_level']}
-"
-            f"{p2_hp_col} HP `{p2_hp_bar}` {state['p2_hp']}/{MAX_HP}
-"
-            f"🟦 MP `{p2_mp_bar}` {state['p2_mp']}/{MAX_MP}"
+            f"**{p2_name}**  ·  LV{p2_level}\n"
+            f"{p2_hp_col} HP `{p2_hp_bar}` {p2_hp}/{MAX_HP}\n"
+            f"🟦 MP `{p2_mp_bar}` {p2_mp}/{MAX_MP}"
         )
         player_stats = (
-            f"**{state['p1_name']}**  ·  LV{state['p1_level']}
-"
-            f"{p1_hp_col} HP `{p1_hp_bar}` {state['p1_hp']}/{MAX_HP}
-"
-            f"🟦 MP `{p1_mp_bar}` {state['p1_mp']}/{MAX_MP}"
+            f"**{p1_name}**  ·  LV{p1_level}\n"
+            f"{p1_hp_col} HP `{p1_hp_bar}` {p1_hp}/{MAX_HP}\n"
+            f"🟦 MP `{p1_mp_bar}` {p1_mp}/{MAX_MP}"
         )
 
         embed.add_field(name="👾 Enemy", value=enemy_stats, inline=True)
