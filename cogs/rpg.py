@@ -419,7 +419,8 @@ class RPGCog(commands.Cog):
                 db.update_player(ctx.author.id, paused_battle={"type": "post_win"})
                 await channel.send("⏸️ Paused! Type `!rpg` to start a new fight when ready.")
         else:
-            # Player loses
+            # Player loses — clear bg cache so a NEW background appears for the defeat frame
+            clear_background_for_battle(str(battle_id))
             db.update_player(ctx.author.id, losses=player.get("losses", 0) + 1, paused_battle=None)
             state["log"].append(f"💀 {state['p1_name']} was defeated...")
             msg = await self._send_battle_frame(channel, state, state["log"], None, msg)
@@ -523,9 +524,9 @@ class RPGCog(commands.Cog):
             state["p1_hp"] = max(0, state["p1_hp"])
             state["p2_hp"] = max(0, state["p2_hp"])
 
-        # ── Duel over ─────────────────────────────────────────────────────────
+        # ── Duel over — clear bg so defeat frame gets a new background ──────
         active_battles.pop(channel.id, None)
-        clear_background_for_battle(str(battle_id))
+        clear_background_for_battle(str(battle_id))   # new bg for the final frame
         state["turn_label"] = "Duel Over!"
 
         if state["p1_hp"] > 0:
