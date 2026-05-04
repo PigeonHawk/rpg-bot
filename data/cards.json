@@ -1,0 +1,1102 @@
+[
+  {
+    "name": "Funguar",
+    "top": 5,
+    "right": 3,
+    "bottom": 1,
+    "left": 1,
+    "element": "none",
+    "image": "Funguar.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Gayla",
+    "top": 2,
+    "right": 4,
+    "bottom": 1,
+    "left": 4,
+    "element": "Thunder",
+    "image": "Gayla.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Gilgamesh",
+    "top": 3,
+    "right": 6,
+    "bottom": 7,
+    "left": 9,
+    "element": "none",
+    "image": "Giglgamesh.WEBP",
+    "level": 10
+  },
+  {
+    "name": "Grand Mantis",
+    "top": 5,
+    "right": 3,
+    "bottom": 2,
+    "left": 5,
+    "element": "none",
+    "image": "Grand_Mantis.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Iguion",
+    "top": 8,
+    "right": 2,
+    "bottom": 2,
+    "left": 8,
+    "element": "none",
+    "image": "Iguion.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Imp",
+    "top": 3,
+    "right": 6,
+    "bottom": 7,
+    "left": 3,
+    "element": "none",
+    "image": "Imp.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Iron Giant",
+    "top": 6,
+    "right": 5,
+    "bottom": 5,
+    "left": 6,
+    "element": "none",
+    "image": "Iron_Giant.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Minotaur",
+    "top": 9,
+    "right": 9,
+    "bottom": 5,
+    "left": 2,
+    "element": "none",
+    "image": "Minotaur.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Shiva",
+    "top": 6,
+    "right": 9,
+    "bottom": 7,
+    "left": 4,
+    "element": "Ice",
+    "image": "Shiva.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Shumi Tribe",
+    "top": 6,
+    "right": 4,
+    "bottom": 5,
+    "left": 8,
+    "element": "none",
+    "image": "Shumi_Tribe.WEBP",
+    "level": 8
+  },
+  {
+    "name": "Squall",
+    "top": 10,
+    "right": 9,
+    "bottom": 4,
+    "left": 6,
+    "element": "none",
+    "image": "Squall.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Abadon",
+    "top": 6,
+    "right": 5,
+    "bottom": 8,
+    "left": 4,
+    "element": "none",
+    "image": "Abadon.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Abyss Worm",
+    "top": 7,
+    "right": 5,
+    "bottom": 2,
+    "left": 3,
+    "element": "Earth",
+    "image": "Abyss_Worm.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Adamantoise",
+    "top": 4,
+    "right": 6,
+    "bottom": 5,
+    "left": 5,
+    "element": "Earth",
+    "image": "Adamantoise.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Anacondaur",
+    "top": 5,
+    "right": 5,
+    "bottom": 1,
+    "left": 3,
+    "element": "Poison",
+    "image": "Anacondaur.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Blobra",
+    "top": 2,
+    "right": 5,
+    "bottom": 3,
+    "left": 1,
+    "element": "none",
+    "image": "Blobra.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Doomtrain",
+    "top": 3,
+    "right": 10,
+    "bottom": 1,
+    "left": 10,
+    "element": "Poison",
+    "image": "Doomtrain.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Fastitocalon",
+    "top": 7,
+    "right": 3,
+    "bottom": 5,
+    "left": 1,
+    "element": "Earth",
+    "image": "Fastitocalon.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Belhelmel",
+    "top": 3,
+    "right": 3,
+    "bottom": 4,
+    "left": 5,
+    "element": "none",
+    "image": "Belhelmel.WEBP",
+    "level": 2
+  },
+  {
+    "name": "BGH251F2",
+    "top": 5,
+    "right": 5,
+    "bottom": 7,
+    "left": 8,
+    "element": "none",
+    "image": "BGH251F2.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Blitz",
+    "top": 1,
+    "right": 7,
+    "bottom": 6,
+    "left": 4,
+    "element": "Thunder",
+    "image": "Blitz.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Blood Soul",
+    "top": 2,
+    "right": 1,
+    "bottom": 1,
+    "left": 6,
+    "element": "none",
+    "image": "Blood_Soul.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Blue Dragon",
+    "top": 6,
+    "right": 3,
+    "bottom": 2,
+    "left": 7,
+    "element": "Poison",
+    "image": "Blue_Dragon.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Bomb",
+    "top": 2,
+    "right": 3,
+    "bottom": 7,
+    "left": 6,
+    "element": "Fire",
+    "image": "Bomb.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Buel",
+    "top": 6,
+    "right": 3,
+    "bottom": 2,
+    "left": 2,
+    "element": "none",
+    "image": "Buel.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Cactuar",
+    "top": 6,
+    "right": 3,
+    "bottom": 2,
+    "left": 6,
+    "element": "none",
+    "image": "Cactuar.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Carbuncle",
+    "top": 8,
+    "right": 4,
+    "bottom": 4,
+    "left": 10,
+    "element": "none",
+    "image": "Carbuncle.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Caterchipillar",
+    "top": 4,
+    "right": 3,
+    "bottom": 2,
+    "left": 4,
+    "element": "none",
+    "image": "Caterchipillar.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Catoblepas",
+    "top": 1,
+    "right": 7,
+    "bottom": 8,
+    "left": 7,
+    "element": "none",
+    "image": "Catoblepas.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Cerberus",
+    "top": 7,
+    "right": 10,
+    "bottom": 4,
+    "left": 6,
+    "element": "none",
+    "image": "Cerberus.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Chubby Chocobo",
+    "top": 4,
+    "right": 9,
+    "bottom": 4,
+    "left": 8,
+    "element": "none",
+    "image": "Chubby_Chocobo.WEBP",
+    "level": 8
+  },
+  {
+    "name": "Cockatrice",
+    "top": 2,
+    "right": 6,
+    "bottom": 1,
+    "left": 2,
+    "element": "Thunder",
+    "image": "Cockatrice.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Death Claw",
+    "top": 4,
+    "right": 2,
+    "bottom": 4,
+    "left": 7,
+    "element": "Fire",
+    "image": "Death_Claw.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Angelo",
+    "top": 9,
+    "right": 3,
+    "bottom": 6,
+    "left": 7,
+    "element": "none",
+    "image": "Angelo.WEBP",
+    "level": 8
+  },
+  {
+    "name": "Bahamut",
+    "top": 10,
+    "right": 6,
+    "bottom": 8,
+    "left": 2,
+    "element": "none",
+    "image": "Bahamut.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Behemoth",
+    "top": 3,
+    "right": 7,
+    "bottom": 6,
+    "left": 5,
+    "element": "none",
+    "image": "Behemoth.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Alexander",
+    "top": 9,
+    "right": 6,
+    "bottom": 4,
+    "left": 8,
+    "element": "Holy",
+    "image": "Alexander.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Armadodo",
+    "top": 6,
+    "right": 1,
+    "bottom": 5,
+    "left": 3,
+    "element": "Earth",
+    "image": "Armadodo.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Bite Bug",
+    "top": 1,
+    "right": 5,
+    "bottom": 3,
+    "left": 3,
+    "element": "none",
+    "image": "Bite_Bug.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Chicobo",
+    "top": 2,
+    "right": 4,
+    "bottom": 4,
+    "left": 3,
+    "element": "none",
+    "image": "Chicobo.WEBP",
+    "level": 8
+  },
+  {
+    "name": "Chimera",
+    "top": 7,
+    "right": 3,
+    "bottom": 6,
+    "left": 6,
+    "element": "Water",
+    "image": "Chimera.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Creeps",
+    "top": 5,
+    "right": 4,
+    "bottom": 3,
+    "left": 4,
+    "element": "Thunder",
+    "image": "Creeps.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Diablos",
+    "top": 5,
+    "right": 6,
+    "bottom": 6,
+    "left": 9,
+    "element": "none",
+    "image": "Diablos.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Edea",
+    "top": 10,
+    "right": 4,
+    "bottom": 8,
+    "left": 2,
+    "element": "none",
+    "image": "Edea.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Eden",
+    "top": 4,
+    "right": 8,
+    "bottom": 10,
+    "left": 8,
+    "element": "none",
+    "image": "Eden.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Elastoid",
+    "top": 6,
+    "right": 4,
+    "bottom": 3,
+    "left": 6,
+    "element": "none",
+    "image": "Elastoid.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Elnoyle",
+    "top": 5,
+    "right": 6,
+    "bottom": 3,
+    "left": 9,
+    "element": "none",
+    "image": "Elnoyle.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Elvoret",
+    "top": 8,
+    "right": 4,
+    "bottom": 4,
+    "left": 5,
+    "element": "Wind",
+    "image": "Elvoret.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Fastitocalon-F",
+    "top": 5,
+    "right": 3,
+    "bottom": 1,
+    "left": 3,
+    "element": "Water",
+    "image": "Fastitocalon-F.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Forbidden",
+    "top": 6,
+    "right": 2,
+    "bottom": 6,
+    "left": 5,
+    "element": "none",
+    "image": "Forbidden.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Fujin & Raijin",
+    "top": 8,
+    "right": 4,
+    "bottom": 5,
+    "left": 6,
+    "element": "none",
+    "image": "Fujin,_Raijin.WEBP",
+    "level": 6
+  },
+  {
+    "name": "GIM47N",
+    "top": 2,
+    "right": 4,
+    "bottom": 4,
+    "left": 3,
+    "element": "none",
+    "image": "GIM47N.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Gargantua",
+    "top": 8,
+    "right": 3,
+    "bottom": 5,
+    "left": 2,
+    "element": "none",
+    "image": "Gargantua.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Geezard",
+    "top": 1,
+    "right": 4,
+    "bottom": 5,
+    "left": 1,
+    "element": "none",
+    "image": "Geezard.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Gerogero",
+    "top": 3,
+    "right": 1,
+    "bottom": 1,
+    "left": 4,
+    "element": "Poison",
+    "image": "Gerogero.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Gesper",
+    "top": 1,
+    "right": 5,
+    "bottom": 4,
+    "left": 4,
+    "element": "none",
+    "image": "Gesper.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Glacial Eye",
+    "top": 6,
+    "right": 4,
+    "bottom": 1,
+    "left": 3,
+    "element": "Ice",
+    "image": "Glacial_Eye.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Granaldo",
+    "top": 5,
+    "right": 2,
+    "bottom": 4,
+    "left": 7,
+    "element": "none",
+    "image": "Granaldo.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Grat",
+    "top": 4,
+    "right": 2,
+    "bottom": 1,
+    "left": 5,
+    "element": "none",
+    "image": "Grat.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Grendel",
+    "top": 4,
+    "right": 8,
+    "bottom": 4,
+    "left": 4,
+    "element": "Thunder",
+    "image": "Grendel.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Hexadragon",
+    "top": 7,
+    "right": 3,
+    "bottom": 2,
+    "left": 6,
+    "element": "Fire",
+    "image": "Hexadragon.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Ifrit",
+    "top": 9,
+    "right": 8,
+    "bottom": 6,
+    "left": 2,
+    "element": "Fire",
+    "image": "Ifrit.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Irvine",
+    "top": 2,
+    "right": 10,
+    "bottom": 4,
+    "left": 6,
+    "element": "none",
+    "image": "Irvine.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Jelleye",
+    "top": 3,
+    "right": 2,
+    "bottom": 6,
+    "left": 5,
+    "element": "none",
+    "image": "Jelleye.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Jumbo Cactuar",
+    "top": 9,
+    "right": 4,
+    "bottom": 4,
+    "left": 8,
+    "element": "none",
+    "image": "Jumbo_Cactuar.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Kiros",
+    "top": 6,
+    "right": 10,
+    "bottom": 4,
+    "left": 6,
+    "element": "none",
+    "image": "Kiros.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Krysta",
+    "top": 7,
+    "right": 1,
+    "bottom": 4,
+    "left": 7,
+    "element": "Holy",
+    "image": "Krysta.WEBP",
+    "level": 8
+  },
+  {
+    "name": "Laguna",
+    "top": 10,
+    "right": 8,
+    "bottom": 4,
+    "left": 5,
+    "element": "none",
+    "image": "Laguna.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Leviathan",
+    "top": 7,
+    "right": 7,
+    "bottom": 6,
+    "left": 1,
+    "element": "Water",
+    "image": "Leviathan.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Malboro",
+    "top": 9,
+    "right": 2,
+    "bottom": 3,
+    "left": 8,
+    "element": "Poison",
+    "image": "Malboro.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Mesmerize",
+    "top": 5,
+    "right": 4,
+    "bottom": 3,
+    "left": 4,
+    "element": "none",
+    "image": "Mesmerize.WEBP",
+    "level": 2
+  },
+  {
+    "name": "MiniMog",
+    "top": 9,
+    "right": 4,
+    "bottom": 4,
+    "left": 4,
+    "element": "none",
+    "image": "MiniMog.WEBP",
+    "level": 8
+  },
+  {
+    "name": "Mobile Type 8",
+    "top": 8,
+    "right": 5,
+    "bottom": 2,
+    "left": 5,
+    "element": "none",
+    "image": "Mobile_Type_8.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Ochu",
+    "top": 5,
+    "right": 3,
+    "bottom": 6,
+    "left": 4,
+    "element": "none",
+    "image": "Ochu.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Odin",
+    "top": 9,
+    "right": 4,
+    "bottom": 8,
+    "left": 2,
+    "element": "none",
+    "image": "Odin.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Oilboyle",
+    "top": 1,
+    "right": 8,
+    "bottom": 6,
+    "left": 7,
+    "element": "none",
+    "image": "Oilboyle.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Pandemona",
+    "top": 9,
+    "right": 1,
+    "bottom": 6,
+    "left": 7,
+    "element": "Wind",
+    "image": "Pandemona.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Phoenix",
+    "top": 7,
+    "right": 4,
+    "bottom": 6,
+    "left": 9,
+    "element": "Fire",
+    "image": "Phoenix.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Propagator",
+    "top": 8,
+    "right": 8,
+    "bottom": 6,
+    "left": 4,
+    "element": "none",
+    "image": "Propagator.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Pupu",
+    "top": 10,
+    "right": 1,
+    "bottom": 10,
+    "left": 1,
+    "element": "none",
+    "image": "Pupu.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Quezacotl",
+    "top": 9,
+    "right": 4,
+    "bottom": 4,
+    "left": 8,
+    "element": "Thunder",
+    "image": "Quezacotl.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Quistis",
+    "top": 9,
+    "right": 2,
+    "bottom": 4,
+    "left": 9,
+    "element": "none",
+    "image": "Quistis.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Red Bat",
+    "top": 6,
+    "right": 1,
+    "bottom": 3,
+    "left": 1,
+    "element": "none",
+    "image": "Red_Bat.WEBP",
+    "level": 1
+  },
+  {
+    "name": "Red Giant",
+    "top": 7,
+    "right": 4,
+    "bottom": 6,
+    "left": 5,
+    "element": "Fire",
+    "image": "Red_Giant.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Rinoa",
+    "top": 4,
+    "right": 9,
+    "bottom": 10,
+    "left": 8,
+    "element": "none",
+    "image": "Rinoa.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Ruby Dragon",
+    "top": 8,
+    "right": 4,
+    "bottom": 5,
+    "left": 6,
+    "element": "Fire",
+    "image": "Ruby_Dragon.WEBP",
+    "level": 6
+  },
+  {
+    "name": "SAM08G",
+    "top": 5,
+    "right": 3,
+    "bottom": 5,
+    "left": 6,
+    "element": "Fire",
+    "image": "SAM08G.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Sacred",
+    "top": 5,
+    "right": 9,
+    "bottom": 6,
+    "left": 2,
+    "element": "Earth",
+    "image": "Sacred.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Seifer",
+    "top": 6,
+    "right": 9,
+    "bottom": 4,
+    "left": 8,
+    "element": "none",
+    "image": "Seifer.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Selphie",
+    "top": 10,
+    "right": 4,
+    "bottom": 8,
+    "left": 2,
+    "element": "none",
+    "image": "Selphie.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Siren",
+    "top": 8,
+    "right": 2,
+    "bottom": 8,
+    "left": 6,
+    "element": "none",
+    "image": "Siren.WEBP",
+    "level": 7
+  },
+  {
+    "name": "Snow Lion",
+    "top": 7,
+    "right": 3,
+    "bottom": 1,
+    "left": 4,
+    "element": "Ice",
+    "image": "Snow_Lion.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Sphinxara",
+    "top": 5,
+    "right": 9,
+    "bottom": 3,
+    "left": 3,
+    "element": "none",
+    "image": "Sphinxara.WEBP",
+    "level": 6
+  },
+  {
+    "name": "T-Rexaur",
+    "top": 4,
+    "right": 7,
+    "bottom": 6,
+    "left": 4,
+    "element": "none",
+    "image": "T-Rexaur.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Thrustaevis",
+    "top": 5,
+    "right": 5,
+    "bottom": 3,
+    "left": 2,
+    "element": "Wind",
+    "image": "Thrustaevis.WEBP",
+    "level": 2
+  },
+  {
+    "name": "Tiamat",
+    "top": 8,
+    "right": 4,
+    "bottom": 5,
+    "left": 8,
+    "element": "Poison",
+    "image": "Tiamat.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Tonberry King",
+    "top": 8,
+    "right": 3,
+    "bottom": 7,
+    "left": 8,
+    "element": "none",
+    "image": "Tonberry_King.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Tonberry",
+    "top": 6,
+    "right": 3,
+    "bottom": 4,
+    "left": 4,
+    "element": "none",
+    "image": "Tonberry.WEBP",
+    "level": 5
+  },
+  {
+    "name": "Torama",
+    "top": 7,
+    "right": 4,
+    "bottom": 6,
+    "left": 5,
+    "element": "none",
+    "image": "Torama.WEBP",
+    "level": 4
+  },
+  {
+    "name": "Trauma",
+    "top": 4,
+    "right": 8,
+    "bottom": 6,
+    "left": 4,
+    "element": "none",
+    "image": "Trauma.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Tri-Face",
+    "top": 3,
+    "right": 5,
+    "bottom": 5,
+    "left": 8,
+    "element": "Poison",
+    "image": "Tri-Face.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Tri-Point",
+    "top": 10,
+    "right": 8,
+    "bottom": 3,
+    "left": 1,
+    "element": "Thunder",
+    "image": "Tri-Point.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Turtapod",
+    "top": 2,
+    "right": 3,
+    "bottom": 6,
+    "left": 5,
+    "element": "none",
+    "image": "Turtapod.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Ultima Weapon",
+    "top": 7,
+    "right": 9,
+    "bottom": 3,
+    "left": 8,
+    "element": "none",
+    "image": "Ultima_Weapon.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Vysage",
+    "top": 6,
+    "right": 5,
+    "bottom": 4,
+    "left": 5,
+    "element": "none",
+    "image": "Vysage.WEBP",
+    "level": 3
+  },
+  {
+    "name": "Ward",
+    "top": 8,
+    "right": 6,
+    "bottom": 4,
+    "left": 10,
+    "element": "none",
+    "image": "Ward.WEBP",
+    "level": 9
+  },
+  {
+    "name": "Wedge & Biggs",
+    "top": 6,
+    "right": 3,
+    "bottom": 3,
+    "left": 5,
+    "element": "none",
+    "image": "Wedge,_Biggs.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Windigo",
+    "top": 8,
+    "right": 5,
+    "bottom": 6,
+    "left": 3,
+    "element": "Wind",
+    "image": "Windigo.WEBP",
+    "level": 4
+  },
+  {
+    "name": "X-ATM092",
+    "top": 9,
+    "right": 3,
+    "bottom": 6,
+    "left": 3,
+    "element": "none",
+    "image": "X-ATM092.WEBP",
+    "level": 6
+  },
+  {
+    "name": "Zell",
+    "top": 8,
+    "right": 6,
+    "bottom": 5,
+    "left": 10,
+    "element": "none",
+    "image": "Zell.WEBP",
+    "level": 9
+  }
+]
