@@ -4,9 +4,12 @@ import json
 import os
 import asyncio
 from pathlib import Path
+from dotenv import load_dotenv
 
-# ── Config ────────────────────────────────────────────────────────────────────
-TOKEN = "YOUR_BOT_TOKEN_HERE"   # Replace with your bot token
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+PREFIX = "!"
+GUILD_ID = None
 PREFIX = "!"
 GUILD_ID = None                  # Set to your server ID (int) to restrict commands, or leave None
 
