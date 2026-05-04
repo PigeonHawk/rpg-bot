@@ -8,7 +8,42 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import io
 
-import data_manager as db
+# ── Standalone TT data manager ───────────────────────────────────────────────
+import json as _json
+from pathlib import Path as _Path
+
+TT_DATA_FILE = _Path("data/tt_players.json")
+
+def _tt_load() -> dict:
+    if not TT_DATA_FILE.exists():
+        TT_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        return {}
+    with open(TT_DATA_FILE) as f:
+        return _json.load(f)
+
+def _tt_save(data: dict):
+    with open(TT_DATA_FILE, "w") as f:
+        _json.dump(data, f, indent=2)
+
+def tt_get(user_id: int) -> dict | None:
+    return _tt_load().get(str(user_id))
+
+def tt_register(user_id: int, username: str, cards: list) -> dict:
+    data = _tt_load()
+    player = {"id": user_id, "username": username, "gil": 200, "tt_cards": cards}
+    data[str(user_id)] = player
+    _tt_save(data)
+    return player
+
+def tt_update(user_id: int, **kwargs):
+    data = _tt_load()
+    key = str(user_id)
+    if key in data:
+        data[key].update(kwargs)
+        _tt_save(data)
+
+def tt_is_registered(user_id: int) -> bool:
+    return tt_get(user_id) is not None
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CARDS_DIR  = Path("assets/cards")
@@ -298,9 +333,9 @@ class TTCog(commands.Cog):
     # ── !ttregister ───────────────────────────────────────────────────────────
     @commands.command(name="ttregister")
     async def ttregister(self, ctx: commands.Context):
-        player = db.get_player(ctx.author.id)
+        player = tt_get(ctx.author.id)
         if not player:
-            await ctx.send("❌ You need to register with `!rpg` first!")
+            await ctx.send("❌ Register with `!ttregister` first!")
             return
 
         if player.get("tt_cards") is not None:
@@ -309,7 +344,7 @@ class TTCog(commands.Cog):
 
         # Give 6 random level 1 cards (no duplicates)
         starters = random.sample(LEVEL1_CARDS, min(6, len(LEVEL1_CARDS)))
-        db.update_player(ctx.author.id, tt_cards=starters)
+        tt_update(ctx.author.id, tt_cards=starters)
 
         embed = discord.Embed(
             title="🃏 Welcome to Triple Triad!",
@@ -328,9 +363,9 @@ class TTCog(commands.Cog):
     # ── !ttgacha ──────────────────────────────────────────────────────────────
     @commands.command(name="ttgacha")
     async def ttgacha(self, ctx: commands.Context):
-        player = db.get_player(ctx.author.id)
+        player = tt_get(ctx.author.id)
         if not player:
-            await ctx.send("❌ Register with `!rpg` first!")
+            await ctx.send("❌ Register with `!ttregister` first!")
             return
         if player.get("tt_cards") is None:
             await ctx.send("❌ Register for Triple Triad with `!ttregister` first!")
@@ -342,7 +377,7 @@ class TTCog(commands.Cog):
             return
 
         # Deduct gil
-        db.update_player(ctx.author.id, gil=gil - GACHA_COST)
+        tt_update(ctx.author.id, gil=gil - GACHA_COST)
 
         # Pull 3 cards
         pulled = [_weighted_pull() for _ in range(3)]
@@ -361,7 +396,7 @@ class TTCog(commands.Cog):
                 owned_set.add(card["name"])
                 added.append(card["name"])
 
-        db.update_player(ctx.author.id, tt_cards=owned)
+        tt_update(ctx.author.id, tt_cards=owned)
 
         # Render pull sheet
         sheet_path = _render_pull_sheet(pulled)
@@ -389,7 +424,7 @@ class TTCog(commands.Cog):
     # ── !ttcollection ─────────────────────────────────────────────────────────
     @commands.command(name="ttcollection", aliases=["ttcol"])
     async def ttcollection(self, ctx: commands.Context, page: int = 1):
-        player = db.get_player(ctx.author.id)
+        player = tt_get(ctx.author.id)
         if not player or player.get("tt_cards") is None:
             await ctx.send("❌ Register with `!ttregister` first!")
             return
@@ -414,9 +449,9 @@ class TTCog(commands.Cog):
     # ── !ttgil ────────────────────────────────────────────────────────────────
     @commands.command(name="ttgil", aliases=["gil"])
     async def ttgil(self, ctx: commands.Context):
-        player = db.get_player(ctx.author.id)
+        player = tt_get(ctx.author.id)
         if not player:
-            await ctx.send("❌ Register with `!rpg` first!")
+            await ctx.send("❌ Register with `!ttregister` first!")
             return
         gil = player.get("gil", 0)
         cards = len(player.get("tt_cards") or [])
@@ -429,9 +464,9 @@ class TTCog(commands.Cog):
     # ── !tt ───────────────────────────────────────────────────────────────────
     @commands.command(name="tt")
     async def tt(self, ctx: commands.Context, opponent: discord.Member = None):
-        player = db.get_player(ctx.author.id)
+        player = tt_get(ctx.author.id)
         if not player:
-            await ctx.send("❌ Register with `!rpg` first!")
+            await ctx.send("❌ Register with `!ttregister` first!")
             return
         if player.get("tt_cards") is None:
             await ctx.send("❌ Register for Triple Triad with `!ttregister` first!")
@@ -448,10 +483,10 @@ class TTCog(commands.Cog):
 
         if opponent and opponent != ctx.guild.me:
             # PvP
-            if not db.is_registered(opponent.id):
+            if not tt_is_registered(opponent.id):
                 await ctx.send(f"❌ **{opponent.display_name}** hasn't registered yet!")
                 return
-            opp_data = db.get_player(opponent.id)
+            opp_data = tt_get(opponent.id)
             if opp_data.get("tt_cards") is None:
                 await ctx.send(f"❌ **{opponent.display_name}** hasn't registered for Triple Triad!")
                 return
@@ -656,14 +691,14 @@ class TTCog(commands.Cog):
             # P1 wins
             gil_gain = WIN_GIL_CPU if p2_is_cpu else WIN_GIL_PVP
             gil_lose = LOSE_GIL_CPU if p2_is_cpu else LOSE_GIL_PVP
-            db.update_player(p1_id, gil=p1_gil + gil_gain)
+            tt_update(p1_id, gil=p1_gil + gil_gain)
 
             # Win one of winner's own cards back (they keep collection)
             # Loser loses a random card to winner if PvP
             if not p2_is_cpu and p2_data:
                 p2_gil   = p2_data.get("gil", 0)
                 p2_owned = p2_data.get("tt_cards", [])
-                db.update_player(loser_id, gil=max(0, p2_gil - gil_lose))
+                tt_update(loser_id, gil=max(0, p2_gil - gil_lose))
 
                 if p2_owned:
                     stolen = random.choice(p2_owned)
@@ -671,8 +706,8 @@ class TTCog(commands.Cog):
                     p1_owned = p1_data.get("tt_cards", [])
                     if stolen not in p1_owned:
                         p1_owned.append(stolen)
-                        db.update_player(p1_id, tt_cards=p1_owned)
-                    db.update_player(loser_id, tt_cards=p2_owned)
+                        tt_update(p1_id, tt_cards=p1_owned)
+                    tt_update(loser_id, tt_cards=p2_owned)
                     steal_txt = f"\n🃏 **{winner_name}** won **{stolen}** from {p2_name}!"
                 else:
                     steal_txt = ""
@@ -686,11 +721,11 @@ class TTCog(commands.Cog):
         else:
             # P1 loses
             gil_lose = LOSE_GIL_CPU if p2_is_cpu else LOSE_GIL_PVP
-            db.update_player(p1_id, gil=max(0, p1_gil - gil_lose))
+            tt_update(p1_id, gil=max(0, p1_gil - gil_lose))
 
             if not p2_is_cpu and p2_data:
                 p2_gil = p2_data.get("gil", 0)
-                db.update_player(winner_id, gil=p2_gil + WIN_GIL_PVP)
+                tt_update(winner_id, gil=p2_gil + WIN_GIL_PVP)
 
                 p1_owned = p1_data.get("tt_cards", [])
                 if p1_owned:
@@ -699,8 +734,8 @@ class TTCog(commands.Cog):
                     p2_owned = p2_data.get("tt_cards", [])
                     if stolen not in p2_owned:
                         p2_owned.append(stolen)
-                        db.update_player(winner_id, tt_cards=p2_owned)
-                    db.update_player(p1_id, tt_cards=p1_owned)
+                        tt_update(winner_id, tt_cards=p2_owned)
+                    tt_update(p1_id, tt_cards=p1_owned)
                     steal_txt = f"\n🃏 **{winner_name}** won **{stolen}** from {p1_name}!"
                 else:
                     steal_txt = ""
