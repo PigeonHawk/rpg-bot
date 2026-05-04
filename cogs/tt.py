@@ -3,6 +3,7 @@ from discord.ext import commands
 import json
 import random
 import asyncio
+import time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -30,7 +31,7 @@ def tt_get(user_id: int) -> dict | None:
 
 def tt_register(user_id: int, username: str, cards: list) -> dict:
     data = _tt_load()
-    player = {"id": user_id, "username": username, "gil": 200, "tt_cards": cards}
+    player = {"id": user_id, "username": username, "gil": 200, "tt_cards": cards, "last_daily": 0}
     data[str(user_id)] = player
     _tt_save(data)
     return player
@@ -80,6 +81,18 @@ START_GIL     = 200
 
 # ── Starter cards — 6 random level 1 cards ───────────────────────────────────
 LEVEL1_CARDS = [c["name"] for c in ALL_CARDS if c["level"] == 1]
+
+# ── CPU difficulty card pools ─────────────────────────────────────────────────
+# Easy: levels 1-3 only (common monsters, no rares)
+CPU_EASY_POOL   = [c for c in ALL_CARDS if c["level"] <= 3]
+# Normal: levels 2-6 (mix of common and uncommon)
+CPU_NORMAL_POOL = [c for c in ALL_CARDS if 2 <= c["level"] <= 6]
+# Hard: levels 5-10 (rare, GF, and character cards)
+CPU_HARD_POOL   = [c for c in ALL_CARDS if c["level"] >= 5]
+
+# ── Daily gil reward ──────────────────────────────────────────────────────────
+DAILY_GIL     = 100
+DAILY_COOLDOWN = 86400  # 24 hours in seconds
 
 # ── Active TT games ───────────────────────────────────────────────────────────
 active_tt: dict[int, dict] = {}
@@ -457,7 +470,7 @@ class TTCog(commands.Cog):
 
     # ── !tt ───────────────────────────────────────────────────────────────────
     @commands.command(name="tt")
-    async def tt(self, ctx: commands.Context, opponent: discord.Member = None):
+    async def tt(self, ctx: commands.Context, difficulty_or_opponent: str = None, opponent: discord.Member = None):
         player = tt_get(ctx.author.id)
         if not player:
             await ctx.send("❌ Register with `!ttregister` first!")
@@ -475,18 +488,39 @@ class TTCog(commands.Cog):
             await ctx.send("❌ You need at least 5 cards to play! Use `!ttgacha` to get more.")
             return
 
-        if opponent and opponent != ctx.guild.me:
+        # Parse difficulty/opponent
+        # Supports: !tt easy/norm/hard (cpu) OR !tt @user
+        difficulty = "norm"
+        actual_opponent = None
+
+        if difficulty_or_opponent:
+            if difficulty_or_opponent.lower() in ("easy", "norm", "normal", "hard"):
+                difficulty = difficulty_or_opponent.lower()
+                if difficulty == "normal":
+                    difficulty = "norm"
+                actual_opponent = opponent
+            else:
+                # Try to parse as member mention
+                try:
+                    actual_opponent = await commands.MemberConverter().convert(ctx, difficulty_or_opponent)
+                except:
+                    await ctx.send("❌ Usage: `!tt easy/norm/hard` for CPU or `!tt @user` for PvP!")
+                    return
+        if opponent and actual_opponent is None:
+            actual_opponent = opponent
+
+        if actual_opponent and actual_opponent != ctx.guild.me:
             # PvP
-            if not tt_is_registered(opponent.id):
+            if not tt_is_registered(actual_opponent.id):
                 await ctx.send(f"❌ **{opponent.display_name}** hasn't registered yet!")
                 return
-            opp_data = tt_get(opponent.id)
+            opp_data = tt_get(actual_opponent.id)
             if opp_data.get("tt_cards") is None:
                 await ctx.send(f"❌ **{opponent.display_name}** hasn't registered for Triple Triad!")
                 return
             opp_cards = _get_player_cards(opp_data)
             if len(opp_cards) < 5:
-                await ctx.send(f"❌ **{opponent.display_name}** doesn't have enough cards!")
+                await ctx.send(f"❌ **{actual_opponent.display_name}** doesn't have enough cards!")
                 return
             # Send challenge with accept/decline buttons
             class ChallengeView(discord.ui.View):
@@ -534,10 +568,23 @@ class TTCog(commands.Cog):
                 await ctx.send(f"❌ **{opponent.display_name}** declined the challenge!")
                 return
 
-            await self._run_tt(ctx, player, cards, opponent, opp_data, opp_cards)
+            await self._run_tt(ctx, player, cards, actual_opponent, opp_data, opp_cards)
         else:
-            # vs CPU
-            cpu_pool = random.sample(ALL_CARDS, 5)
+            # vs CPU — pick pool based on difficulty
+            if difficulty == "easy":
+                pool = CPU_EASY_POOL
+                diff_label = "🟢 Easy"
+            elif difficulty == "hard":
+                pool = CPU_HARD_POOL
+                diff_label = "🔴 Hard"
+            else:
+                pool = CPU_NORMAL_POOL
+                diff_label = "🟡 Normal"
+
+            if len(pool) < 5:
+                pool = ALL_CARDS
+            cpu_pool = random.sample(pool, 5)
+            await ctx.send(f"⚔️ Starting a **{diff_label}** CPU match!", delete_after=3)
             await self._run_tt(ctx, player, cards, None, None, cpu_pool)
 
     # ── TT game engine ────────────────────────────────────────────────────────
@@ -743,6 +790,39 @@ class TTCog(commands.Cog):
 
         await channel.send(result_msg)
 
+    # ── !daily ────────────────────────────────────────────────────────────────
+    @commands.command(name="ttdaily")
+    async def ttdaily(self, ctx: commands.Context):
+        player = tt_get(ctx.author.id)
+        if not player:
+            await ctx.send("❌ Register with `!ttregister` first!")
+            return
+
+        now         = int(time.time())
+        last_daily  = player.get("last_daily", 0)
+        time_left   = DAILY_COOLDOWN - (now - last_daily)
+
+        if time_left > 0:
+            hours   = time_left // 3600
+            minutes = (time_left % 3600) // 60
+            await ctx.send(
+                f"⏳ You already claimed your daily! Come back in "
+                f"**{hours}h {minutes}m**."
+            )
+            return
+
+        new_gil = player.get("gil", 0) + DAILY_GIL
+        tt_update(ctx.author.id, gil=new_gil, last_daily=now)
+
+        embed = discord.Embed(
+            title="💰 Daily Gil Claimed!",
+            description=f"You received **{DAILY_GIL} gil**!",
+            color=0xf0c040
+        )
+        embed.add_field(name="New Balance", value=f"💰 {new_gil} gil", inline=True)
+        embed.set_footer(text="Come back in 24 hours for more!")
+        await ctx.send(embed=embed)
+
     # ── !tthelp ───────────────────────────────────────────────────────────────
     @commands.command(name="tthelp")
     async def tthelp(self, ctx: commands.Context):
@@ -753,12 +833,18 @@ class TTCog(commands.Cog):
         )
         embed.add_field(name="Commands", value=(
             "`!ttregister` — Register and get 6 starter cards\n"
-            "`!tt cpu` — Play against the CPU\n"
+            "`!tt easy/norm/hard` — Play vs CPU (choose difficulty)\n"
             "`!tt @user` — Challenge a player\n"
             "`!ttgacha` — 3-card pull (500 gil)\n"
-            "`!ttcollection` — View your cards\n"
-            "`!ttgil` — Check your gil\n"
+            "`!ttcollection` — View your card collection\n"
+            "`!ttgil` — Check your gil balance\n"
+            "`!ttdaily` — Claim 100 gil daily reward\n"
             "`!tthelp` — This help message"
+        ), inline=False)
+        embed.add_field(name="⚔️ CPU Difficulty", value=(
+            "🟢 `!tt easy` — Levels 1-3 cards only\n"
+            "🟡 `!tt norm` — Levels 2-6 cards\n"
+            "🔴 `!tt hard` — Levels 5-10 (rare + GF cards!)"
         ), inline=False)
         embed.add_field(name="How to Play", value=(
             "Each player picks 5 cards from their collection.\n"
