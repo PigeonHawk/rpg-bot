@@ -333,22 +333,16 @@ class TTCog(commands.Cog):
     # ── !ttregister ───────────────────────────────────────────────────────────
     @commands.command(name="ttregister")
     async def ttregister(self, ctx: commands.Context):
-        player = tt_get(ctx.author.id)
-        if not player:
-            await ctx.send("❌ Register with `!ttregister` first!")
+        if tt_is_registered(ctx.author.id):
+            await ctx.send("❌ You are already registered for Triple Triad!")
             return
 
-        if player.get("tt_cards") is not None:
-            await ctx.send("❌ You're already registered for Triple Triad!")
-            return
-
-        # Give 6 random level 1 cards (no duplicates)
         starters = random.sample(LEVEL1_CARDS, min(6, len(LEVEL1_CARDS)))
-        tt_update(ctx.author.id, tt_cards=starters)
+        tt_register(ctx.author.id, ctx.author.display_name, starters)
 
         embed = discord.Embed(
             title="🃏 Welcome to Triple Triad!",
-            description=f"You've been given **6 starter cards**!\nUse `!ttgacha` to pull more (500 gil per 3 pulls).",
+            description="You have been given 6 starter cards! Use `!ttgacha` to pull more (500 gil per 3 pulls).",
             color=0x7c3aed
         )
         cards = [CARD_BY_NAME[n] for n in starters if n in CARD_BY_NAME]
@@ -357,7 +351,7 @@ class TTCog(commands.Cog):
             for c in cards
         )
         embed.add_field(name="Your Starter Cards", value=card_list, inline=False)
-        embed.set_footer(text=f"Gil balance: {player.get('gil', START_GIL)}")
+        embed.set_footer(text="Starting gil: 200")
         await ctx.send(embed=embed)
 
     # ── !ttgacha ──────────────────────────────────────────────────────────────
