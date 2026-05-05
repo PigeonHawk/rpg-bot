@@ -22,6 +22,7 @@ async def main():
     async with bot:
         await bot.load_extension("cogs.tt")
         await bot.load_extension("cogs.chud")
+        await bot.load_extension("cogs.hamtaro")
         await bot.start(TOKEN)
 
 @bot.event
