@@ -59,12 +59,15 @@ OMEN_LINES = [
 OMEN_IMAGE_URL = "https://cdn.discordapp.com/attachments/1389009961153069066/1501699535028752535/IMG_2545.webp?ex=69fd062d&is=69fbb4ad&hm=a6fc86555257e8aca95e9c860209f84a5689f27ef0500995d2dfb8fecbb7493d&"
 
 
+ALLOWED_USER = "abluemage"
+
+
 class OmenCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command(name="omen")
-    async def omen(self, ctx: commands.Context):
+    async def omen(self, ctx: commands.Context, member: discord.Member = None):
         line = random.choice(OMEN_LINES)
 
         embed = discord.Embed(
@@ -75,7 +78,19 @@ class OmenCog(commands.Cog):
         embed.set_footer(text="— Omen, from the shadows")
         embed.set_thumbnail(url=OMEN_IMAGE_URL)
 
-        await ctx.send(embed=embed)
+        # If a user is mentioned, DM them (restricted to abluemage only)
+        if member is not None:
+            if ctx.author.name.lower() != ALLOWED_USER.lower():
+                await ctx.send("You do not have permission to send Omen into the shadows of someone's DMs.")
+                return
+            try:
+                await member.send(embed=embed)
+                await ctx.send(f"Omen has emerged from the shadows of {member.display_name}'s DMs. 🌑")
+            except discord.Forbidden:
+                await ctx.send(f"The shadows could not reach {member.display_name}. Their DMs are closed.")
+        else:
+            # No user mentioned, just post in channel as normal
+            await ctx.send(embed=embed)
 
 
 async def setup(bot):
