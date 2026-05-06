@@ -5,6 +5,7 @@ import json
 import asyncio
 import aiohttp
 import re
+import os
 from datetime import datetime
 
 # ── Data ──────────────────────────────────────────────────────────────────────
@@ -86,39 +87,49 @@ def add_review(idx, username, user_id, text, image_url=None, rating=None):
         return True
     return False
 
-# ── Claude API lookup ─────────────────────────────────────────────────────────
+# ── OMDb API lookup ───────────────────────────────────────────────────────────
 async def lookup_movie(title: str) -> dict | None:
-    prompt = (
-        f"Search for the movie '{title}' and return ONLY a JSON object with: "
-        "title, year, director, description (2-3 sentences), rating (e.g. PG-13), "
-        "score (e.g. 8.4/10), poster_url (direct .jpg or .png URL to a movie poster). "
-        "Return ONLY raw JSON, no markdown. If not found return null."
-    )
+    """Look up a movie using the free OMDb API."""
+    api_key = os.getenv("OMDB_API_KEY", "")
+    if not api_key:
+        print("OMDB_API_KEY not set in environment variables!")
+        return None
     try:
+        url = f"http://www.omdbapi.com/?apikey={api_key}&t={aiohttp.helpers.BasicAuth._quote(title)}&plot=short&r=json"
+        import urllib.parse
+        encoded_title = urllib.parse.quote(title)
+        url = f"http://www.omdbapi.com/?apikey={api_key}&t={encoded_title}&plot=short&r=json"
         async with aiohttp.ClientSession() as s:
-            async with s.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"Content-Type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 1000,
-                      "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                      "messages": [{"role": "user", "content": prompt}]},
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as r:
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
                 if r.status != 200:
                     return None
-                data = await r.json()
-                text = "".join(b.get("text","") for b in data.get("content",[]) if b.get("type")=="text")
-                if not text.strip() or text.strip().lower() == "null":
+                data = await r.json(content_type=None)
+                if data.get("Response") == "False":
                     return None
-                clean = text.strip()
-                if "```" in clean:
-                    clean = clean.split("```")[1]
-                    if clean.startswith("json"):
-                        clean = clean[4:]
-                m = re.search(r"\{.*\}", clean, re.DOTALL)
-                return json.loads(m.group(0)) if m else None
+                poster = data.get("Poster", "")
+                if poster == "N/A":
+                    poster = None
+                # Build score from ratings
+                score = None
+                for rating in data.get("Ratings", []):
+                    if rating.get("Source") == "Internet Movie Database":
+                        score = f"{rating['Value']} IMDb"
+                        break
+                if not score and data.get("imdbRating") and data["imdbRating"] != "N/A":
+                    score = f"{data['imdbRating']}/10 IMDb"
+                return {
+                    "title":      data.get("Title", title),
+                    "year":       data.get("Year", ""),
+                    "director":   data.get("Director", ""),
+                    "description": data.get("Plot", "No plot available."),
+                    "rating":     data.get("Rated", "") if data.get("Rated") != "N/A" else "",
+                    "score":      score or "",
+                    "genre":      data.get("Genre", ""),
+                    "actors":     data.get("Actors", ""),
+                    "poster_url": poster,
+                }
     except Exception as e:
-        print(f"Movie lookup error: {e}")
+        print(f"OMDb lookup error: {e}")
         return None
 
 # ── Helper: wait for user message and auto-delete it ─────────────────────────
@@ -509,9 +520,11 @@ def _build_search_embed(data):
         description=data.get("description","No description found."),
         color=0xe50914
     )
-    if data.get("director"): embed.add_field(name="🎬 Director", value=data["director"], inline=True)
-    if data.get("rating"):   embed.add_field(name="🔞 Rating",   value=data["rating"],   inline=True)
-    if data.get("score"):    embed.add_field(name="⭐ Score",    value=data["score"],    inline=True)
+    if data.get("director"): embed.add_field(name="🎬 Director", value=data["director"],  inline=True)
+    if data.get("rating"):   embed.add_field(name="🔞 Rating",   value=data["rating"],    inline=True)
+    if data.get("score"):    embed.add_field(name="⭐ Score",     value=data["score"],     inline=True)
+    if data.get("genre"):    embed.add_field(name="🎭 Genre",     value=data["genre"],     inline=True)
+    if data.get("actors"):   embed.add_field(name="🎭 Cast",      value=data["actors"],    inline=False)
     if data.get("poster_url"):
         embed.set_image(url=data["poster_url"])
     else:
