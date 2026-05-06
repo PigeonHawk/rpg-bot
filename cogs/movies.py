@@ -209,31 +209,47 @@ class ReviewFlipView(discord.ui.View):
 
     @discord.ui.button(label="✏️ Write a Review", style=discord.ButtonStyle.primary, row=0)
     async def write_review(self, interaction: discord.Interaction, button: discord.ui.Button):
-        title = self._get_movie_title()
+        title   = self._get_movie_title()
+        channel = interaction.channel
+        user_id = interaction.user.id
 
-        # Step 1: ask for rating
-        await interaction.response.send_message(
-            f"⭐ How would you rate **{title}**? Type a rating like `8/10` or `⭐⭐⭐⭐` (or type `skip`).",
-            ephemeral=True
+        # Defer so the button doesn't fail while we wait for input
+        await interaction.response.defer()
+
+        async def ask(prompt_text, timeout=60):
+            """Send a prompt in the channel, wait for reply, delete both."""
+            prompt = await channel.send(prompt_text)
+            content, att_url = await _await_message(self.bot, user_id, channel.id, timeout)
+            try:
+                await prompt.delete()
+            except:
+                pass
+            return content, att_url
+
+        # Step 1 — rating
+        rating_text, _ = await ask(
+            f"{interaction.user.mention} ⭐ Rate **{title}** — type something like `8/10` or `skip`.",
+            timeout=30
         )
-        rating_text, _ = await _await_message(self.bot, interaction.user.id, interaction.channel.id, timeout=30)
         if rating_text is None:
-            await interaction.edit_original_response(content="⏱️ Timed out!")
+            await channel.send(f"{interaction.user.mention} ⏱️ Timed out! Click Write a Review to try again.", delete_after=6)
             return
         rating = None if rating_text.lower() == "skip" else rating_text
 
-        # Step 2: ask for review text
-        await interaction.edit_original_response(content=f"📝 Write your review for **{title}**! (120 seconds)")
-        review_text, _ = await _await_message(self.bot, interaction.user.id, interaction.channel.id, timeout=120)
+        # Step 2 — review text
+        review_text, _ = await ask(
+            f"{interaction.user.mention} 📝 Write your review for **{title}**! (120 seconds)",
+            timeout=120
+        )
         if not review_text:
-            await interaction.edit_original_response(content="⏱️ Timed out!")
+            await channel.send(f"{interaction.user.mention} ⏱️ Timed out!", delete_after=6)
             return
 
-        # Step 3: ask for scene image (optional)
-        await interaction.edit_original_response(
-            content="🖼️ Want to attach a favourite scene? Paste an image URL or attach a photo — or type `skip`."
+        # Step 3 — scene image
+        img_text, img_att = await ask(
+            f"{interaction.user.mention} 🖼️ Attach a favourite scene? Paste an image URL, attach a photo, or type `skip`.",
+            timeout=30
         )
-        img_text, img_att = await _await_message(self.bot, interaction.user.id, interaction.channel.id, timeout=30)
         image_url = None
         if img_att:
             image_url = img_att
