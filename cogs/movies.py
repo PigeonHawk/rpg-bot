@@ -90,43 +90,38 @@ def add_review(idx, username, user_id, text, image_url=None, rating=None):
 # ── OMDb API lookup ───────────────────────────────────────────────────────────
 async def lookup_movie(title: str) -> dict | None:
     """Look up a movie using the free OMDb API."""
+    import urllib.parse
     api_key = os.getenv("OMDB_API_KEY", "")
     if not api_key:
-        print("OMDB_API_KEY not set in environment variables!")
+        print("ERROR: OMDB_API_KEY not set in Railway Variables!")
         return None
+    encoded = urllib.parse.quote(title.strip())
+    url = f"https://www.omdbapi.com/?apikey={api_key}&t={encoded}&plot=short&r=json"
+    print(f"OMDb request: {url}")
     try:
-        url = f"http://www.omdbapi.com/?apikey={api_key}&t={aiohttp.helpers.BasicAuth._quote(title)}&plot=short&r=json"
-        import urllib.parse
-        encoded_title = urllib.parse.quote(title)
-        url = f"http://www.omdbapi.com/?apikey={api_key}&t={encoded_title}&plot=short&r=json"
         async with aiohttp.ClientSession() as s:
             async with s.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                if r.status != 200:
-                    return None
+                print(f"OMDb status: {r.status}")
                 data = await r.json(content_type=None)
+                print(f"OMDb response: {data.get('Response')} — {data.get('Title', data.get('Error',''))}")
                 if data.get("Response") == "False":
                     return None
-                poster = data.get("Poster", "")
+                poster = data.get("Poster") or None
                 if poster == "N/A":
                     poster = None
-                # Build score from ratings
                 score = None
-                for rating in data.get("Ratings", []):
-                    if rating.get("Source") == "Internet Movie Database":
-                        score = f"{rating['Value']} IMDb"
-                        break
-                if not score and data.get("imdbRating") and data["imdbRating"] != "N/A":
+                if data.get("imdbRating") and data["imdbRating"] != "N/A":
                     score = f"{data['imdbRating']}/10 IMDb"
                 return {
-                    "title":      data.get("Title", title),
-                    "year":       data.get("Year", ""),
-                    "director":   data.get("Director", ""),
+                    "title":       data.get("Title", title),
+                    "year":        data.get("Year", ""),
+                    "director":    data.get("Director", ""),
                     "description": data.get("Plot", "No plot available."),
-                    "rating":     data.get("Rated", "") if data.get("Rated") != "N/A" else "",
-                    "score":      score or "",
-                    "genre":      data.get("Genre", ""),
-                    "actors":     data.get("Actors", ""),
-                    "poster_url": poster,
+                    "rating":      "" if data.get("Rated") in ("N/A", None) else data.get("Rated", ""),
+                    "score":       score or "",
+                    "genre":       "" if data.get("Genre") == "N/A" else data.get("Genre", ""),
+                    "actors":      "" if data.get("Actors") == "N/A" else data.get("Actors", ""),
+                    "poster_url":  poster,
                 }
     except Exception as e:
         print(f"OMDb lookup error: {e}")
