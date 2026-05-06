@@ -58,7 +58,7 @@ OMEN_LINES = [
 ]
 
 # Path to the Omen icon image — place omen_icon.webp in the same folder as this cog
-OMEN_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "omen_icon.webp")
+OMEN_IMAGE_PATH = "rpg-bot/cogs/omen_icon.webp"
 
 
 class OmenCog(commands.Cog):
