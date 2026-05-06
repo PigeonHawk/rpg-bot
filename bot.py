@@ -25,6 +25,7 @@ async def main():
         await bot.load_extension("cogs.hamtaro")
         await bot.load_extension("cogs.movies")
         await bot.load_extension("cogs.oogway")
+        await bot.load_extension("cogs.omen")
         await bot.start(TOKEN)
 
 @bot.event
