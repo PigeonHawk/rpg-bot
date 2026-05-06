@@ -1,9 +1,10 @@
 import discord
 from discord.ext import commands
 import random
+import os
 
 OMEN_LINES = [
-    # Half of original list
+    # Philosophical / gameplay lines
     "I am everywhere and nowhere. Mostly I am in your base stealing your orb. But philosophically speaking, everywhere.",
     "They will never see me coming. I have been standing here for ten minutes. They have not looked once. Remarkable.",
     "From the shadows I strike. From the shadows I also missed. From the shadows I am reloading.",
@@ -56,6 +57,10 @@ OMEN_LINES = [
     "The void consumes all who enter it. I am told this is also true of my smokes. Enter at your own risk.",
 ]
 
+# Path to the Omen icon image — place omen_icon.webp in the same folder as this cog
+OMEN_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "omen_icon.webp")
+
+
 class OmenCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -63,13 +68,22 @@ class OmenCog(commands.Cog):
     @commands.command(name="omen")
     async def omen(self, ctx: commands.Context):
         line = random.choice(OMEN_LINES)
+
         embed = discord.Embed(
             description=f'*"{line}"*',
             color=0x6b21a8
         )
         embed.set_author(name="Omen 🌑")
         embed.set_footer(text="— Omen, from the shadows")
-        await ctx.send(embed=embed)
+
+        # Attach the image and display it as the embed thumbnail
+        if os.path.exists(OMEN_IMAGE_PATH):
+            file = discord.File(OMEN_IMAGE_PATH, filename="omen_icon.webp")
+            embed.set_thumbnail(url="attachment://omen_icon.webp")
+            await ctx.send(file=file, embed=embed)
+        else:
+            # Fallback: send without image if file is missing
+            await ctx.send(embed=embed)
 
 
 async def setup(bot):
