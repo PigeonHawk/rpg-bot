@@ -152,7 +152,9 @@ class OmenCog(commands.Cog):
         await asyncio.sleep(5)
         comment = await self.get_action_comment(action)
         if comment:
-            await channel.send(embed=self.build_embed(comment))
+            msg = await channel.send(comment)
+            await asyncio.sleep(600)
+            await msg.delete()
 
     # ------------------------------------------------------------------ #
     #  Background task — !poop every 3 hours                             #
@@ -241,11 +243,11 @@ class OmenCog(commands.Cog):
                     messages=[{"role": "user", "content": prompt}]
                 )
                 reply = response.choices[0].message.content
-                await ctx.send(embed=self.build_embed(reply))
+                await ctx.send(reply)
 
             except Exception as e:
                 print(f"Omen search error: {e}")
-                await ctx.send(embed=self.build_embed("The shadows refused to reveal that information. I have filed a complaint with the void. It has not responded."))
+                await ctx.send("The shadows refused to reveal that information. I have filed a complaint with the void. It has not responded.")
 
     # ------------------------------------------------------------------ #
     #  !omenreset — clears conversation history                          #
