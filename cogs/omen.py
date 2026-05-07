@@ -275,11 +275,13 @@ class OmenCog(commands.Cog):
         target_name = random.choice(WOMAN_TARGETS)
         target_member = None
         if ctx.guild:
-            await ctx.guild.fetch_members(limit=None)
-            for member in ctx.guild.members:
-                if member.name.lower() == target_name.lower():
-                    target_member = member
-                    break
+            try:
+                async for member in ctx.guild.fetch_members(limit=None):
+                    if member.name.lower() == target_name.lower():
+                        target_member = member
+                        break
+            except Exception as e:
+                print(f"[Omen !woman] fetch_members error: {e}")
 
         if target_member:
             await ctx.send(f"<@{target_member.id}>")
