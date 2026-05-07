@@ -3,6 +3,7 @@ from discord.ext import commands
 import random
 import os
 from groq import Groq
+from collections import defaultdict
 
 OMEN_LINES = [
     # Philosophical / gameplay lines
@@ -62,6 +63,9 @@ OMEN_IMAGE_URL = "https://cdn.discordapp.com/attachments/1389009961153069066/150
 
 ALLOWED_USER = "abluemage"
 
+# How many messages to remember per user (keeps API usage low)
+MAX_HISTORY = 10
+
 OMEN_SYSTEM_PROMPT = """You are Omen from Valorant. You are a phantom of ruin — a wraith who exists between life and death, torn from his past and consumed by the void. You speak in a dark, brooding, melodramatic way but are frequently undercut by very mundane, self-aware observations about your teammates, your rank, or your general performance in-game.
 
 Your tone is:
@@ -71,13 +75,15 @@ Your tone is:
 - Occasionally laced with subtle innuendo that you never acknowledge as such
 - Never uses exclamation marks. Everything is stated as cold fact.
 
-You respond directly to whatever the user says, weaving their message into your response in Omen's voice. Keep responses to 1-3 sentences. Do not break character. Do not use quotation marks around your response."""
+You are holding an ongoing conversation. Remember what has been said and respond naturally to the flow of the conversation in Omen's voice. Keep responses to 1-3 sentences. Do not break character. Do not use quotation marks around your response."""
 
 
 class OmenCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        # Stores conversation history per user ID
+        self.histories = defaultdict(list)
 
     # ------------------------------------------------------------------ #
     #  Helper — builds an Omen embed                                      #
@@ -90,19 +96,33 @@ class OmenCog(commands.Cog):
         return embed
 
     # ------------------------------------------------------------------ #
-    #  Helper — calls Groq and returns Omen's reply                       #
+    #  Helper — calls Groq with full conversation history                 #
     # ------------------------------------------------------------------ #
-    async def ask_omen(self, user_message: str) -> str:
+    async def ask_omen(self, user_id: int, user_message: str) -> str:
+        history = self.histories[user_id]
+
+        # Add the new user message to history
+        history.append({"role": "user", "content": user_message})
+
+        # Trim history if it gets too long
+        if len(history) > MAX_HISTORY:
+            self.histories[user_id] = history[-MAX_HISTORY:]
+
         try:
             response = self.ai_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 max_tokens=200,
                 messages=[
-                    {"role": "system", "content": OMEN_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message}
-                ]
+                    {"role": "system", "content": OMEN_SYSTEM_PROMPT}
+                ] + self.histories[user_id]
             )
-            return response.choices[0].message.content
+            reply = response.choices[0].message.content
+
+            # Add Omen's reply to history so he remembers it next time
+            self.histories[user_id].append({"role": "assistant", "content": reply})
+
+            return reply
+
         except Exception as e:
             print(f"Omen AI error: {e}")
             return random.choice(OMEN_LINES)
@@ -133,15 +153,22 @@ class OmenCog(commands.Cog):
     @commands.command(name="omentalk")
     async def omentalk(self, ctx: commands.Context, *, message: str):
         async with ctx.typing():
-            reply = await self.ask_omen(message)
+            reply = await self.ask_omen(ctx.author.id, message)
             await ctx.send(embed=self.build_embed(reply))
+
+    # ------------------------------------------------------------------ #
+    #  !omenreset — clears your conversation history with Omen            #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="omenreset")
+    async def omenreset(self, ctx: commands.Context):
+        self.histories[ctx.author.id] = []
+        await ctx.send("Omen has forgotten you. He says this is not personal. It is very personal.")
 
     # ------------------------------------------------------------------ #
     #  on_message — handles DMs and replies to Omen messages              #
     # ------------------------------------------------------------------ #
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Never respond to bots or the bot itself
         if message.author.bot:
             return
 
@@ -151,7 +178,7 @@ class OmenCog(commands.Cog):
                 referenced = await message.channel.fetch_message(message.reference.message_id)
                 if referenced.author.id == self.bot.user.id:
                     async with message.channel.typing():
-                        reply = await self.ask_omen(message.content)
+                        reply = await self.ask_omen(message.author.id, message.content)
                         await message.channel.send(embed=self.build_embed(reply))
             except Exception:
                 pass
@@ -160,7 +187,7 @@ class OmenCog(commands.Cog):
         # ── Case 2: Someone DMed the bot directly ──
         if isinstance(message.channel, discord.DMChannel):
             async with message.channel.typing():
-                reply = await self.ask_omen(message.content)
+                reply = await self.ask_omen(message.author.id, message.content)
                 await message.channel.send(embed=self.build_embed(reply))
 
 
