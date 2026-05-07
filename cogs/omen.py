@@ -55,11 +55,9 @@ class OmenCog(commands.Cog):
         self.histories = defaultdict(list)
         self.woman_usage = defaultdict(list)  # userId -> [timestamps]
         self.poop_loop.start()
-        self.fart_loop.start()
 
     def cog_unload(self):
         self.poop_loop.cancel()
-        self.fart_loop.cancel()
 
     # ------------------------------------------------------------------ #
     #  Helper — find the bowel-updates channel                            #
@@ -158,33 +156,18 @@ class OmenCog(commands.Cog):
             await msg.delete()
 
     # ------------------------------------------------------------------ #
-    #  Background task — !poop every 3 hours                             #
+    #  Background task — random !poop or !fart once every 4 hours       #
     # ------------------------------------------------------------------ #
-    @tasks.loop(hours=3)
+    @tasks.loop(hours=4)
     async def poop_loop(self):
         await self.bot.wait_until_ready()
-        await self.post_action("poop")
+        action = random.choice(["poop", "fart"])
+        await self.post_action(action)
 
     @poop_loop.before_loop
     async def before_poop_loop(self):
         await self.bot.wait_until_ready()
-
-    # ------------------------------------------------------------------ #
-    #  Background task — !fart 1-3 times every 4 hours                  #
-    # ------------------------------------------------------------------ #
-    @tasks.loop(hours=4)
-    async def fart_loop(self):
-        await self.bot.wait_until_ready()
-        fart_count = random.randint(1, 3)
-        for i in range(fart_count):
-            await self.post_action("fart")
-            if i < fart_count - 1:
-                # Small gap between multiple farts in the same window
-                await asyncio.sleep(random.randint(30, 120))
-
-    @fart_loop.before_loop
-    async def before_fart_loop(self):
-        await self.bot.wait_until_ready()
+        await asyncio.sleep(4 * 3600)  # Wait 4 hours before first run
 
     # ------------------------------------------------------------------ #
     #  !omen command — random AI line in channel or DM a user            #
@@ -263,30 +246,36 @@ class OmenCog(commands.Cog):
     # ------------------------------------------------------------------ #
     @commands.command(name="woman")
     async def woman(self, ctx: commands.Context):
+        import time
         WOMAN_TARGETS = ["hawupup", "xxjulesx", "idkk_9"]
         UNRESTRICTED = ["hawupup", "xxjulesx", "idkk_9"]
         WOMAN_HOURLY_LIMIT = 2
 
-        # Delete the invoking message immediately
-        await ctx.message.delete()
-
         # Rate limit check (skip for unrestricted users)
         if ctx.author.name.lower() not in [u.lower() for u in UNRESTRICTED]:
-            now = __import__("time").time()
+            now = time.time()
             recent = [t for t in self.woman_usage[ctx.author.id] if now - t < 3600]
             if len(recent) >= WOMAN_HOURLY_LIMIT:
                 try:
                     await ctx.author.send("You have used !woman too many times this hour. Try again later.")
                 except Exception:
                     pass
+                await ctx.message.delete()
                 return
             recent.append(now)
             self.woman_usage[ctx.author.id] = recent
+
+        # Delete the invoking message
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
 
         # Find a random target member in the guild
         target_name = random.choice(WOMAN_TARGETS)
         target_member = None
         if ctx.guild:
+            await ctx.guild.fetch_members(limit=None)
             for member in ctx.guild.members:
                 if member.name.lower() == target_name.lower():
                     target_member = member
@@ -295,7 +284,7 @@ class OmenCog(commands.Cog):
         if target_member:
             await ctx.send(f"<@{target_member.id}>")
         else:
-            await ctx.send(target_name)
+            await ctx.send(f"@{target_name}")
 
     # ------------------------------------------------------------------ #
     #  on_message — DMs and reply detection                              #
