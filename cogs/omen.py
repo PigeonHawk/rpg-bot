@@ -53,6 +53,7 @@ class OmenCog(commands.Cog):
         self.bot = bot
         self.ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         self.histories = defaultdict(list)
+        self.woman_usage = defaultdict(list)  # userId -> [timestamps]
         self.poop_loop.start()
         self.fart_loop.start()
 
@@ -256,6 +257,45 @@ class OmenCog(commands.Cog):
     async def omenreset(self, ctx: commands.Context):
         self.histories[ctx.author.id] = []
         await ctx.send(embed=self.build_embed("I have forgotten you. I want you to know this was not difficult."))
+
+    # ------------------------------------------------------------------ #
+    #  !woman — tags a random woman, rate limited to 2 per hour         #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="woman")
+    async def woman(self, ctx: commands.Context):
+        WOMAN_TARGETS = ["hawupup", "xxjulesx", "idkk_9"]
+        UNRESTRICTED = ["hawupup", "xxjulesx", "idkk_9"]
+        WOMAN_HOURLY_LIMIT = 2
+
+        # Delete the invoking message immediately
+        await ctx.message.delete()
+
+        # Rate limit check (skip for unrestricted users)
+        if ctx.author.name.lower() not in [u.lower() for u in UNRESTRICTED]:
+            now = __import__("time").time()
+            recent = [t for t in self.woman_usage[ctx.author.id] if now - t < 3600]
+            if len(recent) >= WOMAN_HOURLY_LIMIT:
+                try:
+                    await ctx.author.send("You have used !woman too many times this hour. Try again later.")
+                except Exception:
+                    pass
+                return
+            recent.append(now)
+            self.woman_usage[ctx.author.id] = recent
+
+        # Find a random target member in the guild
+        target_name = random.choice(WOMAN_TARGETS)
+        target_member = None
+        if ctx.guild:
+            for member in ctx.guild.members:
+                if member.name.lower() == target_name.lower():
+                    target_member = member
+                    break
+
+        if target_member:
+            await ctx.send(f"<@{target_member.id}>")
+        else:
+            await ctx.send(target_name)
 
     # ------------------------------------------------------------------ #
     #  on_message — DMs and reply detection                              #
