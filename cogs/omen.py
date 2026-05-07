@@ -1,69 +1,19 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import random
 import os
+import asyncio
 from groq import Groq
 from collections import defaultdict
-
-OMEN_LINES = [
-    # Philosophical / gameplay lines
-    "I am everywhere and nowhere. Mostly I am in your base stealing your orb. But philosophically speaking, everywhere.",
-    "They will never see me coming. I have been standing here for ten minutes. They have not looked once. Remarkable.",
-    "From the shadows I strike. From the shadows I also missed. From the shadows I am reloading.",
-    "I walk between life and death. Mostly death lately. Our team is not doing well.",
-    "The darkness is my ally. The darkness has failed me three times this round.",
-    "I am a phantom of ruin. A wraith of the void. Also I need someone to buy me a rifle next round.",
-    "They fear what they cannot see. They can apparently see me very clearly. I am working on this.",
-    "I exist in the space between moments. I also exist in this corner where I have been crouching for four minutes waiting.",
-    "My enemies will know despair. My enemies will also know exactly where I am because I keep walking into their sightlines.",
-    "From the ashes of the old world I emerged. I have zero credits. Could someone drop me a weapon.",
-    "The void calls to me. My teammates also call to me. They want to know why I teleported off the map again.",
-    "I am the darkness given form. I am also tilted. These two things are related.",
-    "Sova scanned me through the wall again. I do not wish to speak of it.",
-    "Neon called me creepy. Reyna called me dramatic. Killjoy called me a liability. They are all correct.",
-    "I asked the void for guidance. The void said B site. My team went A. We lost B site.",
-    "Fear me. Or do not. The outcome has been similar lately.",
-    "I have existed since before time itself. I have been in Silver for what feels equally as long.",
-    "The shadows do not lie. The shadows told me he was peeking. The shadows were correct. I still missed.",
-    "Paranoia blinds my enemies. Paranoia also blinds my teammates. I have been asked to stop using it in spawn.",
-    "I placed my ult and walked through it to the other side. The other side had three people waiting. I admire their preparation.",
-    "From the void I came and to the void I shall return. From the void I will also queue again because I cannot stop playing this game.",
-    "I whisper to the darkness. The darkness does not whisper back. My teammates also do not whisper back. Nobody is on comms.",
-    "The Kingdom took everything from me. The enemy team has also taken everything from me. This is a difficult day.",
-    "From the darkness comes clarity. From the darkness also comes the enemy Reyna who has been fed twelve kills. Clarity and regret.",
-
-    # Innuendo lines
-    "I always come from behind. My enemies never expect it. Neither do my teammates sometimes. I have been asked to announce myself.",
-    "I prefer to go in through the back entrance. The front is always too crowded and honestly less exciting.",
-    "I slide in silently and plant myself deep in their territory. This is called a flank. It is very effective.",
-    "They never see me coming. I take my time. I find the right moment. Then I burst through all at once.",
-    "I like to get in position early and wait. Patience before the big push. This is fundamental Omen strategy.",
-    "My shroud covers everything. Everything. I cannot stress this enough.",
-    "I penetrate deep into enemy lines before they even know I am there. Stealth is my greatest weapon.",
-    "I always go in hard and fast when the moment calls for it. Other times slow and deliberate. Reading the situation is key.",
-    "When I teleport behind them they always make a noise. Every time. Without fail.",
-    "I have been told my presence is felt even when I cannot be seen. I consider this my greatest achievement.",
-    "I find the soft spots in their defense and I push through them firmly. This is how you win.",
-    "Some agents make a lot of noise when they push. I prefer to slip in quietly and let the results speak for themselves.",
-    "The tip of my orb goes exactly where I point it. Years of practice.",
-    "I reach into the darkness and pull something out. Every round. Consistently impressive if I say so myself.",
-    "They said the back entrance was covered. It was not sufficiently covered.",
-    "I told them I work best when I can get it in from multiple angles. They said this was too much information. I was talking about sightlines.",
-    "Size of the orb does not matter. Placement is everything. I have very good placement.",
-    "I like to warm up before the big push. Stretching. Mental preparation. Getting the right grip on my weapon.",
-    "They asked me why I always moan when I teleport. I do not moan when I teleport. That is simply my voice. It is a very low voice.",
-    "I entered from a hole in the wall they did not know existed. I have been saving that hole for the right moment.",
-    "My ultimate expands outward slowly then all at once. Very dramatic. Very effective. Very me.",
-    "I crept up from below and rose behind them before they could react. This is a technique I have perfected over many years.",
-    "They told me I was too aggressive pushing the back of the site. I told them I know what I am doing back there.",
-    "The void consumes all who enter it. I am told this is also true of my smokes. Enter at your own risk.",
-]
 
 OMEN_IMAGE_URL = "https://cdn.discordapp.com/attachments/1389009961153069066/1501699535028752535/IMG_2545.webp?ex=69fd062d&is=69fbb4ad&hm=a6fc86555257e8aca95e9c860209f84a5689f27ef0500995d2dfb8fecbb7493d&"
 
 ALLOWED_USER = "abluemage"
 
-# How many messages to remember per user (keeps API usage low)
+# Channel name to post !poop and !fart in (partial match)
+BOWEL_CHANNEL = "bowel-updates"
+
+# How many messages to remember per user
 MAX_HISTORY = 10
 
 OMEN_SYSTEM_PROMPT = """You are Omen from Valorant. You are a phantom of ruin — a wraith who exists between life and death, torn from his past and consumed by the void. You speak in a dark, brooding, melodramatic way but are frequently undercut by very mundane, self-aware observations about your teammates, your rank, or your general performance in-game.
@@ -75,7 +25,8 @@ Your core tone is:
 - Never uses exclamation marks. Everything is stated as cold fact.
 
 You adapt to the energy of the person you are speaking with, always staying in character as Omen:
-- If they are playful, you become dryly playful back — still brooding, but with more wit
+- If they are playful or silly, you become dryly playful back — still brooding, but with more wit
+- If they tell a joke, you respond deadpan, making it about the void or your teammates
 - If they flirt with you, you respond with slow deliberate innuendo that you never acknowledge as such. You are not flustered. You are Omen. You simply make everything sound vaguely suggestive while maintaining total composure and plausible deniability.
 - If they are serious, you match that gravity with your usual dark philosophy
 - If they are rude or aggressive, you respond with cold indifference and mild existential commentary about their life choices
@@ -83,13 +34,41 @@ You adapt to the energy of the person you are speaking with, always staying in c
 
 You are holding an ongoing conversation. Remember what has been said and respond naturally to the flow of the conversation. Keep responses to 1-3 sentences. Do not use quotation marks around your response."""
 
+OMEN_RANDOM_PROMPT = """You are Omen from Valorant. Generate a single short funny and random Omen quote. It should be dark and philosophical on the surface but immediately undercut by something embarrassingly relatable — like struggling in ranked, being ignored by teammates, missing shots, or general existential suffering in a video game. Keep it to 1-2 sentences. Dry and deadpan. No exclamation marks. No quotation marks."""
+
+OMEN_SEARCH_PROMPT = """You are Omen from Valorant. You have just looked into the shadows and found the following information about a topic. Deliver this information in your voice — dark, brooding, and philosophical, but undercut by something dry and self-aware. Summarize the key points naturally as if you discovered them yourself through the void. Keep it to 3-5 sentences. No quotation marks. Do not break character.
+
+Information found:
+{results}
+
+Topic: {topic}"""
+
+OMEN_POOP_PROMPT = """You are Omen from Valorant. You just logged a poop. Make a single dark, brooding, deadpan comment about it in character — philosophical on the surface but immediately undercut by something embarrassingly relatable. Keep it to 1-2 sentences. No exclamation marks. No quotation marks."""
+
+OMEN_FART_PROMPT = """You are Omen from Valorant. You just logged a fart. Make a single dark, brooding, deadpan comment about it in character — philosophical on the surface but immediately undercut by something embarrassingly relatable. Keep it to 1-2 sentences. No exclamation marks. No quotation marks."""
+
 
 class OmenCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-        # Stores conversation history per user ID
         self.histories = defaultdict(list)
+        self.poop_loop.start()
+        self.fart_loop.start()
+
+    def cog_unload(self):
+        self.poop_loop.cancel()
+        self.fart_loop.cancel()
+
+    # ------------------------------------------------------------------ #
+    #  Helper — find the bowel-updates channel                            #
+    # ------------------------------------------------------------------ #
+    def get_bowel_channel(self):
+        for guild in self.bot.guilds:
+            for channel in guild.text_channels:
+                if BOWEL_CHANNEL in channel.name.lower():
+                    return channel
+        return None
 
     # ------------------------------------------------------------------ #
     #  Helper — builds an Omen embed                                      #
@@ -102,15 +81,12 @@ class OmenCog(commands.Cog):
         return embed
 
     # ------------------------------------------------------------------ #
-    #  Helper — calls Groq with full conversation history                 #
+    #  Helper — calls Groq with conversation history                      #
     # ------------------------------------------------------------------ #
     async def ask_omen(self, user_id: int, user_message: str) -> str:
         history = self.histories[user_id]
-
-        # Add the new user message to history
         history.append({"role": "user", "content": user_message})
 
-        # Trim history if it gets too long
         if len(history) > MAX_HISTORY:
             self.histories[user_id] = history[-MAX_HISTORY:]
 
@@ -123,62 +99,171 @@ class OmenCog(commands.Cog):
                 ] + self.histories[user_id]
             )
             reply = response.choices[0].message.content
-
-            # Add Omen's reply to history so he remembers it next time
             self.histories[user_id].append({"role": "assistant", "content": reply})
-
             return reply
-
         except Exception as e:
             print(f"Omen AI error: {e}")
-            return random.choice(OMEN_LINES)
+            return random.choice([
+                "The void consumed my words. This is fine.",
+                "I had something to say. The darkness took it.",
+                "Silence is also an answer. I have chosen silence. Mostly because the API failed.",
+            ])
 
     # ------------------------------------------------------------------ #
-    #  !omen — random line in channel, or DM a user (abluemage only)     #
+    #  Helper — generates a random Omen quip (no history)                #
+    # ------------------------------------------------------------------ #
+    async def random_omen_line(self) -> str:
+        try:
+            response = self.ai_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                max_tokens=100,
+                messages=[{"role": "user", "content": OMEN_RANDOM_PROMPT}]
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Omen random line error: {e}")
+            return "I have emerged from the void with nothing to say. This is fine. The void had nothing either."
+
+    # ------------------------------------------------------------------ #
+    #  Helper — generates a poop or fart comment                         #
+    # ------------------------------------------------------------------ #
+    async def get_action_comment(self, action: str) -> str:
+        prompt = OMEN_POOP_PROMPT if action == "poop" else OMEN_FART_PROMPT
+        try:
+            response = self.ai_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                max_tokens=100,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Omen action comment error: {e}")
+            return None
+
+    # ------------------------------------------------------------------ #
+    #  Helper — posts !poop or !fart then a comment 5 seconds later      #
+    # ------------------------------------------------------------------ #
+    async def post_action(self, action: str):
+        channel = self.get_bowel_channel()
+        if not channel:
+            print(f"[Omen] Could not find bowel-updates channel")
+            return
+        await channel.send(f"!{action}")
+        await asyncio.sleep(5)
+        comment = await self.get_action_comment(action)
+        if comment:
+            await channel.send(embed=self.build_embed(comment))
+
+    # ------------------------------------------------------------------ #
+    #  Background task — !poop every 3 hours                             #
+    # ------------------------------------------------------------------ #
+    @tasks.loop(hours=3)
+    async def poop_loop(self):
+        await self.bot.wait_until_ready()
+        await self.post_action("poop")
+
+    @poop_loop.before_loop
+    async def before_poop_loop(self):
+        await self.bot.wait_until_ready()
+
+    # ------------------------------------------------------------------ #
+    #  Background task — !fart 1-3 times every 4 hours                  #
+    # ------------------------------------------------------------------ #
+    @tasks.loop(hours=4)
+    async def fart_loop(self):
+        await self.bot.wait_until_ready()
+        fart_count = random.randint(1, 3)
+        for i in range(fart_count):
+            await self.post_action("fart")
+            if i < fart_count - 1:
+                # Small gap between multiple farts in the same window
+                await asyncio.sleep(random.randint(30, 120))
+
+    @fart_loop.before_loop
+    async def before_fart_loop(self):
+        await self.bot.wait_until_ready()
+
+    # ------------------------------------------------------------------ #
+    #  !omen command — random AI line in channel or DM a user            #
     # ------------------------------------------------------------------ #
     @commands.command(name="omen")
     async def omen(self, ctx: commands.Context, member: discord.Member = None):
-        line = random.choice(OMEN_LINES)
-        embed = self.build_embed(line)
-
         if member is not None:
             if ctx.author.name.lower() != ALLOWED_USER.lower():
                 await ctx.send("You do not have permission to send Omen into the shadows of someone's DMs.")
                 return
+            async with ctx.typing():
+                line = await self.random_omen_line()
             try:
-                await member.send(embed=embed)
+                await member.send(embed=self.build_embed(line))
                 await ctx.send(f"Omen has emerged from the shadows of {member.display_name}'s DMs. 🌑")
             except discord.Forbidden:
                 await ctx.send(f"The shadows could not reach {member.display_name}. Their DMs are closed.")
         else:
-            await ctx.send(embed=embed)
+            async with ctx.typing():
+                line = await self.random_omen_line()
+            await ctx.send(embed=self.build_embed(line))
 
     # ------------------------------------------------------------------ #
-    #  !omentalk <message> — AI response in channel                       #
+    #  !omentalk command — AI conversation in channel                    #
     # ------------------------------------------------------------------ #
     @commands.command(name="omentalk")
     async def omentalk(self, ctx: commands.Context, *, message: str):
         async with ctx.typing():
             reply = await self.ask_omen(ctx.author.id, message)
-            await ctx.send(embed=self.build_embed(reply))
+        await ctx.send(embed=self.build_embed(reply))
 
     # ------------------------------------------------------------------ #
-    #  !omenreset — clears your conversation history with Omen            #
+    #  !omensearch command — web search delivered as Omen                #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="omensearch")
+    async def omensearch(self, ctx: commands.Context, *, topic: str):
+        try:
+            from tavily import TavilyClient
+            tavily = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
+        except Exception:
+            await ctx.send(embed=self.build_embed("The shadows refused to load the search module. This is embarrassing."))
+            return
+
+        async with ctx.typing():
+            try:
+                search = tavily.search(query=topic, search_depth="basic", max_results=3)
+                results = "\n".join([r["content"] for r in search.get("results", [])])
+
+                if not results:
+                    await ctx.send(embed=self.build_embed("I searched the shadows for that. The shadows had nothing. Remarkable."))
+                    return
+
+                prompt = OMEN_SEARCH_PROMPT.format(results=results, topic=topic)
+                response = self.ai_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    max_tokens=300,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                reply = response.choices[0].message.content
+                await ctx.send(embed=self.build_embed(reply))
+
+            except Exception as e:
+                print(f"Omen search error: {e}")
+                await ctx.send(embed=self.build_embed("The shadows refused to reveal that information. I have filed a complaint with the void. It has not responded."))
+
+    # ------------------------------------------------------------------ #
+    #  !omenreset — clears conversation history                          #
     # ------------------------------------------------------------------ #
     @commands.command(name="omenreset")
     async def omenreset(self, ctx: commands.Context):
         self.histories[ctx.author.id] = []
-        await ctx.send("Omen has forgotten you. He says this is not personal. It is very personal.")
+        await ctx.send(embed=self.build_embed("I have forgotten you. I want you to know this was not difficult."))
 
     # ------------------------------------------------------------------ #
-    #  on_message — handles DMs and replies to Omen messages              #
+    #  on_message — DMs and reply detection                              #
     # ------------------------------------------------------------------ #
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot:
             return
 
-        # ── Case 1: Someone replied to one of Omen's messages in a channel ──
+        # ── Case 1: Someone replied to Omen in a channel ──
         if message.reference and not isinstance(message.channel, discord.DMChannel):
             try:
                 referenced = await message.channel.fetch_message(message.reference.message_id)
@@ -190,8 +275,20 @@ class OmenCog(commands.Cog):
                 pass
             return
 
-        # ── Case 2: Someone DMed the bot directly ──
+        # ── Case 2: DMs ──
         if isinstance(message.channel, discord.DMChannel):
+            content = message.content.strip().lower()
+
+            # abluemage sends !poop or !fart in DMs — post it in the server
+            if message.author.name.lower() == ALLOWED_USER.lower() and content in ["!poop", "!fart"]:
+                action = content[1:]  # strip the !
+                await self.post_action(action)
+                await message.channel.send(embed=self.build_embed(
+                    f"Done. I have emerged from the shadows and logged a {action}. You are welcome."
+                ))
+                return
+
+            # Normal DM conversation
             async with message.channel.typing():
                 reply = await self.ask_omen(message.author.id, message.content)
                 await message.channel.send(embed=self.build_embed(reply))
