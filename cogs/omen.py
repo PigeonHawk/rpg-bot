@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
 import random
+import os
+from groq import Groq
 
 OMEN_LINES = [
     # Philosophical / gameplay lines
@@ -58,14 +60,28 @@ OMEN_LINES = [
 
 OMEN_IMAGE_URL = "https://cdn.discordapp.com/attachments/1389009961153069066/1501699535028752535/IMG_2545.webp?ex=69fd062d&is=69fbb4ad&hm=a6fc86555257e8aca95e9c860209f84a5689f27ef0500995d2dfb8fecbb7493d&"
 
-
 ALLOWED_USER = "abluemage"
+
+OMEN_SYSTEM_PROMPT = """You are Omen from Valorant. You are a phantom of ruin — a wraith who exists between life and death, torn from his past and consumed by the void. You speak in a dark, brooding, melodramatic way but are frequently undercut by very mundane, self-aware observations about your teammates, your rank, or your general performance in-game.
+
+Your tone is:
+- Deeply philosophical and dramatic on the surface
+- Immediately undercut by something embarrassingly relatable or self-deprecating
+- Dry and deadpan, never exclamatory
+- Occasionally laced with subtle innuendo that you never acknowledge as such
+- Never uses exclamation marks. Everything is stated as cold fact.
+
+You respond directly to whatever the user says, weaving their message into your response in Omen's voice. Keep responses to 1-3 sentences. Do not break character. Do not use quotation marks around your response."""
 
 
 class OmenCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
+    # ------------------------------------------------------------------ #
+    #  !omen command — post in channel or DM a user (abluemage only)      #
+    # ------------------------------------------------------------------ #
     @commands.command(name="omen")
     async def omen(self, ctx: commands.Context, member: discord.Member = None):
         line = random.choice(OMEN_LINES)
@@ -78,7 +94,6 @@ class OmenCog(commands.Cog):
         embed.set_footer(text="— Omen, from the shadows")
         embed.set_thumbnail(url=OMEN_IMAGE_URL)
 
-        # If a user is mentioned, DM them (restricted to abluemage only)
         if member is not None:
             if ctx.author.name.lower() != ALLOWED_USER.lower():
                 await ctx.send("You do not have permission to send Omen into the shadows of someone's DMs.")
@@ -89,8 +104,53 @@ class OmenCog(commands.Cog):
             except discord.Forbidden:
                 await ctx.send(f"The shadows could not reach {member.display_name}. Their DMs are closed.")
         else:
-            # No user mentioned, just post in channel as normal
             await ctx.send(embed=embed)
+
+    # ------------------------------------------------------------------ #
+    #  DM auto-responder — Omen replies to anyone who DMs the bot         #
+    # ------------------------------------------------------------------ #
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        # Only respond in DMs, never to other bots or the bot itself
+        if message.author.bot:
+            return
+        if not isinstance(message.channel, discord.DMChannel):
+            return
+
+        async with message.channel.typing():
+            try:
+                response = self.ai_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    max_tokens=200,
+                    messages=[
+                        {"role": "system", "content": OMEN_SYSTEM_PROMPT},
+                        {"role": "user", "content": message.content}
+                    ]
+                )
+                reply = response.choices[0].message.content
+
+                embed = discord.Embed(
+                    description=f'*"{reply}"*',
+                    color=0x6b21a8
+                )
+                embed.set_author(name="Omen 🌑")
+                embed.set_footer(text="— Omen, from the shadows")
+                embed.set_thumbnail(url=OMEN_IMAGE_URL)
+
+                await message.channel.send(embed=embed)
+
+            except Exception as e:
+                print(f"Omen AI error: {e}")
+                # Fall back to a random line from the list if the API fails
+                fallback = random.choice(OMEN_LINES)
+                embed = discord.Embed(
+                    description=f'*"{fallback}"*',
+                    color=0x6b21a8
+                )
+                embed.set_author(name="Omen 🌑")
+                embed.set_footer(text="— Omen, from the shadows")
+                embed.set_thumbnail(url=OMEN_IMAGE_URL)
+                await message.channel.send(embed=embed)
 
 
 async def setup(bot):
