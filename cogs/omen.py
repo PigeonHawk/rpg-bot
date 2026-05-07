@@ -55,9 +55,11 @@ class OmenCog(commands.Cog):
         self.histories = defaultdict(list)
         self.woman_usage = defaultdict(list)  # userId -> [timestamps]
         self.poop_loop.start()
+        self.slapass_loop.start()
 
     def cog_unload(self):
         self.poop_loop.cancel()
+        self.slapass_loop.cancel()
 
     # ------------------------------------------------------------------ #
     #  Helper — find the bowel-updates channel                            #
@@ -240,6 +242,79 @@ class OmenCog(commands.Cog):
     async def omenreset(self, ctx: commands.Context):
         self.histories[ctx.author.id] = []
         await ctx.send(embed=self.build_embed("I have forgotten you. I want you to know this was not difficult."))
+
+    # ------------------------------------------------------------------ #
+    #  Background task — !slapass a random og nips member 3x per hour   #
+    # ------------------------------------------------------------------ #
+    @tasks.loop(hours=1)
+    async def slapass_loop(self):
+        await self.bot.wait_until_ready()
+        SLAPASS_CHANNELS = ["golden-saucer", "bot-channel"]
+        OG_NIPS_ROLE = "og nips"
+
+        for i in range(3):
+            try:
+                # Find the og nips role and pick a random member
+                target_member = None
+                for guild in self.bot.guilds:
+                    role = discord.utils.find(lambda r: r.name.lower() == OG_NIPS_ROLE.lower(), guild.roles)
+                    if role:
+                        eligible = [m for m in role.members if not m.bot]
+                        if eligible:
+                            target_member = random.choice(eligible)
+                            break
+
+                if not target_member:
+                    break
+
+                # Pick a random channel
+                channel = None
+                for guild in self.bot.guilds:
+                    picked_name = random.choice(SLAPASS_CHANNELS)
+                    channel = discord.utils.find(lambda c: picked_name in c.name.lower(), guild.text_channels)
+                    if channel:
+                        break
+
+                if channel:
+                    await channel.send(f"!slapass <@{target_member.id}>")
+
+            except Exception as e:
+                print(f"[Omen slapass_loop] error: {e}")
+
+            if i < 2:
+                await asyncio.sleep(random.randint(600, 1200))
+
+    @slapass_loop.before_loop
+    async def before_slapass_loop(self):
+        await self.bot.wait_until_ready()
+        await asyncio.sleep(3600)  # Wait 1 hour before first run
+
+    # ------------------------------------------------------------------ #
+    #  !omenslap — abluemage triggers a slapass on an og nips member    #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="omenslap")
+    async def omenslap(self, ctx: commands.Context):
+        if ctx.author.name.lower() != ALLOWED_USER.lower():
+            return
+
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        OG_NIPS_ROLE = "og nips"
+        target_member = None
+        if ctx.guild:
+            role = discord.utils.find(lambda r: r.name.lower() == OG_NIPS_ROLE.lower(), ctx.guild.roles)
+            if role:
+                eligible = [m for m in role.members if not m.bot]
+                if eligible:
+                    target_member = random.choice(eligible)
+
+        if target_member:
+            await ctx.send(f"!slapass <@{target_member.id}>")
+        else:
+            await ctx.send("The shadows found no one worthy of a slap. This is disappointing.")
 
     # ------------------------------------------------------------------ #
     #  !woman — tags a random woman, rate limited to 2 per hour         #
