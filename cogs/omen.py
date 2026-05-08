@@ -158,7 +158,7 @@ class OmenCog(commands.Cog):
     # ------------------------------------------------------------------ #
     #  Background task — random !poop or !fart once every 4 hours       #
     # ------------------------------------------------------------------ #
-    @tasks.loop(hours=4)
+    @tasks.loop(hours=8)
     async def poop_loop(self):
         await self.bot.wait_until_ready()
         action = random.choice(["poop", "fart"])
@@ -167,7 +167,7 @@ class OmenCog(commands.Cog):
     @poop_loop.before_loop
     async def before_poop_loop(self):
         await self.bot.wait_until_ready()
-        await asyncio.sleep(4 * 3600)  # Wait 4 hours before first run
+        await asyncio.sleep(8 * 3600)  # Wait 8 hours before first run
 
     # ------------------------------------------------------------------ #
     #  !omen command — random AI line in channel or DM a user            #
