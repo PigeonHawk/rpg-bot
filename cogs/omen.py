@@ -54,6 +54,7 @@ class OmenCog(commands.Cog):
         self.woman_usage = defaultdict(list)  # userId -> [timestamps]
 
     def cog_unload(self):
+        pass
 
     # ------------------------------------------------------------------ #
     #  Helper — find the bowel-updates channel                            #
