@@ -43,9 +43,7 @@ Information found:
 
 Topic: {topic}"""
 
-OMEN_POOP_PROMPT = """You are Omen from Valorant. You just logged a poop. Make a single dark, brooding, deadpan comment about it in character — philosophical on the surface but immediately undercut by something embarrassingly relatable. Keep it to 1-2 sentences. No exclamation marks. No quotation marks."""
-
-OMEN_FART_PROMPT = """You are Omen from Valorant. You just logged a fart. Make a single dark, brooding, deadpan comment about it in character — philosophical on the surface but immediately undercut by something embarrassingly relatable. Keep it to 1-2 sentences. No exclamation marks. No quotation marks."""
+OMEN_IDKK_POOP_PROMPT = """You are Omen from Valorant. A user named idkk_9 needs to go poop. Write a single short message about this in Omen's voice — dark, brooding, and philosophical on the surface but immediately undercut by something dry and self-aware. Reference idkk_9 by name naturally. Keep it to 1-2 sentences. No exclamation marks. No quotation marks. Do not use @ or any mention syntax."""
 
 
 class OmenCog(commands.Cog):
@@ -54,10 +52,8 @@ class OmenCog(commands.Cog):
         self.ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         self.histories = defaultdict(list)
         self.woman_usage = defaultdict(list)  # userId -> [timestamps]
-        self.poop_loop.start()
 
     def cog_unload(self):
-        self.poop_loop.cancel()
 
     # ------------------------------------------------------------------ #
     #  Helper — find the bowel-updates channel                            #
@@ -122,52 +118,6 @@ class OmenCog(commands.Cog):
         except Exception as e:
             print(f"Omen random line error: {e}")
             return "I have emerged from the void with nothing to say. This is fine. The void had nothing either."
-
-    # ------------------------------------------------------------------ #
-    #  Helper — generates a poop or fart comment                         #
-    # ------------------------------------------------------------------ #
-    async def get_action_comment(self, action: str) -> str:
-        prompt = OMEN_POOP_PROMPT if action == "poop" else OMEN_FART_PROMPT
-        try:
-            response = self.ai_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                max_tokens=100,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Omen action comment error: {e}")
-            return None
-
-    # ------------------------------------------------------------------ #
-    #  Helper — posts !poop or !fart then a comment 5 seconds later      #
-    # ------------------------------------------------------------------ #
-    async def post_action(self, action: str):
-        channel = self.get_bowel_channel()
-        if not channel:
-            print(f"[Omen] Could not find bowel-updates channel")
-            return
-        await channel.send(f"!{action}")
-        await asyncio.sleep(5)
-        comment = await self.get_action_comment(action)
-        if comment:
-            msg = await channel.send(comment)
-            await asyncio.sleep(600)
-            await msg.delete()
-
-    # ------------------------------------------------------------------ #
-    #  Background task — random !poop or !fart once every 4 hours       #
-    # ------------------------------------------------------------------ #
-    @tasks.loop(hours=8)
-    async def poop_loop(self):
-        await self.bot.wait_until_ready()
-        action = random.choice(["poop", "fart"])
-        await self.post_action(action)
-
-    @poop_loop.before_loop
-    async def before_poop_loop(self):
-        await self.bot.wait_until_ready()
-        await asyncio.sleep(8 * 3600)  # Wait 8 hours before first run
 
     # ------------------------------------------------------------------ #
     #  !omen command — random AI line in channel or DM a user            #
@@ -240,6 +190,43 @@ class OmenCog(commands.Cog):
     async def omenreset(self, ctx: commands.Context):
         self.histories[ctx.author.id] = []
         await ctx.send(embed=self.build_embed("I have forgotten you. I want you to know this was not difficult."))
+
+    # ------------------------------------------------------------------ #
+    #  !omenpoop — abluemage triggers an Omen message about idkk_9      #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="omenpoop")
+    async def omenpoop(self, ctx: commands.Context):
+        if ctx.author.name.lower() != ALLOWED_USER.lower():
+            return
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+        try:
+            response = self.ai_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                max_tokens=100,
+                messages=[{"role": "user", "content": OMEN_IDKK_POOP_PROMPT}]
+            )
+            reply = response.choices[0].message.content
+        except Exception as e:
+            print(f"Omen omenpoop error: {e}")
+            reply = "idkk_9 has disappeared into the void. The void smells suspicious."
+        # Find idkk_9 and DM them
+        target = None
+        if ctx.guild:
+            for member in ctx.guild.members:
+                if member.name.lower() == "idkk_9":
+                    target = member
+                    break
+
+        if target:
+            try:
+                await target.send(reply)
+            except discord.Forbidden:
+                pass
+        else:
+            print("[Omen omenpoop] Could not find idkk_9 in the server")
 
     # ------------------------------------------------------------------ #
     #  !omenslap — abluemage triggers a slapass on an og nips member    #
