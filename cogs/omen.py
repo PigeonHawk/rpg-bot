@@ -204,7 +204,8 @@ class OmenCog(commands.Cog):
         except Exception:
             pass
         try:
-            response = self.ai_client.chat.completions.create(
+            response = await asyncio.to_thread(
+                self.ai_client.chat.completions.create,
                 model="llama-3.3-70b-versatile",
                 max_tokens=100,
                 messages=[{"role": "user", "content": OMEN_IDKK_POOP_PROMPT}]
