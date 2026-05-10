@@ -193,6 +193,27 @@ class OmenCog(commands.Cog):
         await ctx.send(embed=self.build_embed("I have forgotten you. I want you to know this was not difficult."))
 
     # ------------------------------------------------------------------ #
+    #  !confess — anonymous confession posted in bot-channel             #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="confess")
+    async def confess(self, ctx: commands.Context, *, message: str):
+        # Delete the command message immediately
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        # Find bot-channel
+        confession_channel = None
+        if ctx.guild:
+            confession_channel = discord.utils.find(
+                lambda c: "bot-channel" in c.name.lower(), ctx.guild.text_channels
+            )
+
+        if confession_channel:
+            await confession_channel.send(f"**Anonymous Confession:** {message}")
+
+    # ------------------------------------------------------------------ #
     #  !omenpoop — abluemage triggers an Omen message about idkk_9      #
     # ------------------------------------------------------------------ #
     @commands.command(name="omenpoop")
