@@ -198,10 +198,8 @@ class OmenCog(commands.Cog):
     @commands.command(name="confess")
     async def confess(self, ctx: commands.Context, *, message: str):
         # Delete the command message immediately
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
+        await ctx.message.delete()
+        await asyncio.sleep(0)
 
         # Find bot-channel
         confession_channel = None
