@@ -193,6 +193,25 @@ class OmenCog(commands.Cog):
         await ctx.send(embed=self.build_embed("I have forgotten you. I want you to know this was not difficult."))
 
     # ------------------------------------------------------------------ #
+    #  !shitfacts — AI generated unique poop fact                        #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="shitfacts")
+    async def shitfacts(self, ctx: commands.Context):
+        async with ctx.typing():
+            try:
+                response = await asyncio.to_thread(
+                    self.ai_client.chat.completions.create,
+                    model="llama-3.3-70b-versatile",
+                    max_tokens=150,
+                    messages=[{"role": "user", "content": "Give me one unique, interesting, and surprising fact about poop, digestion, or bathroom habits. Make it genuinely fascinating and educational. Keep it to 2-3 sentences. Do not start with Did you know. No quotation marks."}]
+                )
+                fact = response.choices[0].message.content
+            except Exception as e:
+                print(f"Omen shitfacts error: {e}")
+                fact = "The void has consumed today's fact. Try again."
+        await ctx.send(f"💩 **Shit Fact:** {fact}")
+
+    # ------------------------------------------------------------------ #
     #  !confess — anonymous confession posted in bot-channel             #
     # ------------------------------------------------------------------ #
     @commands.command(name="confess")
