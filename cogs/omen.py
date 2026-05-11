@@ -205,7 +205,7 @@ class OmenCog(commands.Cog):
         confession_channel = None
         if ctx.guild:
             confession_channel = discord.utils.find(
-                lambda c: "bot-channel" in c.name.lower(), ctx.guild.text_channels
+                lambda c: "confessions" in c.name.lower(), ctx.guild.text_channels
             )
 
         if confession_channel:
