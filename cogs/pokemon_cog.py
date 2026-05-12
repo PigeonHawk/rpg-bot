@@ -850,9 +850,7 @@ class PokeCog(commands.Cog):
 
         await ctx.send(embed=discord.Embed(
             title="📅  Daily Reward!",
-            description=f"**{name}** claimed their daily **+$5.00 Pokédollars**!
-
-💰 Balance: **${user['pokedollars']:.2f}**",
+            description=f"**{name}** claimed their daily **+$5.00 Pokédollars**!\n\n💰 Balance: **${user['pokedollars']:.2f}**",
             color=0x2ecc71
         ))
 
