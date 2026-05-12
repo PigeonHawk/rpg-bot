@@ -19,7 +19,7 @@ WHAT_NEXT = (
 )
 
 # ── GitHub raw image base URL ──────────────────────────────────────────────
-BASE_URL = "https://raw.githubusercontent.com/PigeonHawk/rpg-bot/main/assets/pokemon-cards/"
+BASE_URL = "https://raw.githubusercontent.com/PigeonHawk/rpg-bot/refs/heads/main/assets/pokemon-cards/"
 
 # ── Data file ──────────────────────────────────────────────────────────────
 DATA_FILE = os.path.join(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "."), "pokedata.json")
