@@ -26,6 +26,7 @@ async def main():
         await bot.load_extension("cogs.movies")
         await bot.load_extension("cogs.oogway")
         await bot.load_extension("cogs.omen")
+        await bot.load_extension("cogs.pokemon_cog")
         await bot.start(TOKEN)
 
 @bot.event
