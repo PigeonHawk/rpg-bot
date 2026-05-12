@@ -269,11 +269,9 @@ class PackBuyView(discord.ui.View):
 
         desc_parts = []
         if new_lines:
-            desc_parts.append(f"**🆕 {len(new_cards)} New Card(s):**
-" + "\n".join(new_lines))
+            desc_parts.append(f"**🆕 {len(new_cards)} New Card(s):**\n" + "\n".join(new_lines))
         if dupe_lines:
-            desc_parts.append(f"**🔄 {len(dupes)} Duplicate(s):**
-" + "\n".join(dupe_lines))
+            desc_parts.append(f"**🔄 {len(dupes)} Duplicate(s):**\n" + "\n".join(dupe_lines))
 
         summary = discord.Embed(
             title=f"📦 {self.user.display_name} opens {count} pack{'s' if count > 1 else ''}!",
