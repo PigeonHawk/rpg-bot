@@ -406,23 +406,8 @@ class OmenCog(commands.Cog):
                 pass
             return
 
-        # ── Case 2: DMs ──
-        if isinstance(message.channel, discord.DMChannel):
-            content = message.content.strip().lower()
-
-            # abluemage sends !poop or !fart in DMs — post it in the server
-            if message.author.name.lower() == ALLOWED_USER.lower() and content in ["!poop", "!fart"]:
-                action = content[1:]  # strip the !
-                await self.post_action(action)
-                await message.channel.send(embed=self.build_embed(
-                    f"Done. I have emerged from the shadows and logged a {action}. You are welcome."
-                ))
-                return
-
-            # Normal DM conversation
-            async with message.channel.typing():
-                reply = await self.ask_omen(message.author.id, message.content)
-                await message.channel.send(embed=self.build_embed(reply))
+        # ── Case 2: DMs — ignore all, handled by dmconfess flow ──
+        return
 
 
 async def setup(bot):
