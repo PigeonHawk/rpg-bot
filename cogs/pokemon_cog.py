@@ -5,6 +5,17 @@ import json
 import os
 import asyncio
 
+# ── What to do next message ───────────────────────────────────────────────
+WHAT_NEXT = (
+    "**What would you like to do next?**\n\n"
+    "`!openpack` — Open packs\n"
+    "`!buypack` — Buy a pack ($30)\n"
+    "`!mycards` — View your collection\n"
+    "`!pokewallet` — Check balance\n"
+    "`!selldupes` — Sell duplicate cards\n"
+    "`!trade @user <card>` — Trade with a player"
+)
+
 # ── GitHub raw image base URL ──────────────────────────────────────────────
 BASE_URL = "https://raw.githubusercontent.com/PigeonHawk/rpg-bot/main/assets/pokemon-cards/"
 
@@ -203,6 +214,11 @@ class PackBuyView(discord.ui.View):
             n = int(btn.label.split()[1])
             btn.disabled = packs < n
 
+    async def on_timeout(self):
+        await safe_delete(self.prev_msg)
+        uid = str(self.user.id)
+        self.cog.user_messages.pop(uid, None)
+
     async def _open(self, interaction, count):
         uid  = str(self.user.id)
         user = self.cog.db["users"][uid]
@@ -232,32 +248,58 @@ class PackBuyView(discord.ui.View):
 
         save_data(self.cog.db)
 
-        lines = []
+        # Build one embed per card with its image
+        card_embeds = []
+        for cid, card in new_cards:
+            label, color = RARITY_DISPLAY[card["rarity"]]
+            e = discord.Embed(title=f"✨ {card['name']}", description=label, color=color)
+            e.set_image(url=card["image"])
+            card_embeds.append(e)
+        for cid, card, val in dupes:
+            label, color = RARITY_DISPLAY[card["rarity"]]
+            e = discord.Embed(title=f"🔄 {card['name']} *(duplicate)*", description=f"{label} · +${val:.2f}", color=color)
+            e.set_image(url=card["image"])
+            card_embeds.append(e)
+
+        # Summary embed
+        summary_lines = []
         for cid, card in new_cards:
             label, _ = RARITY_DISPLAY[card["rarity"]]
-            lines.append(f"✨ **{card['name']}** — {label}")
+            summary_lines.append(f"✨ **{card['name']}** — {label}")
         for cid, card, val in dupes:
             label, _ = RARITY_DISPLAY[card["rarity"]]
-            lines.append(f"🔄 **{card['name']}** — {label} *(dupe)*")
+            summary_lines.append(f"🔄 **{card['name']}** — {label} *(dupe +${val:.2f})*")
 
-        desc = "\n".join(lines) or "No cards pulled."
-        if dupes:
-            desc += f"\n\n🔄 **{len(dupes)} duplicate(s)** found — worth **${dupe_value:.2f}**"
-
-        embed = discord.Embed(
+        summary = discord.Embed(
             title=f"📦 {self.user.display_name} opens {count} pack{'s' if count > 1 else ''}!",
-            description=desc, color=0x3498db
+            description="\n".join(summary_lines) or "No cards pulled.",
+            color=0x3498db
         )
-        embed.set_footer(text=f"Packs left: {user['packs']} · Balance: ${user['pokedollars']:.2f}")
+        if dupes:
+            summary.add_field(name="Duplicate Payout", value=f"${dupe_value:.2f} Pokédollars", inline=True)
+        summary.set_footer(text=f"Packs left: {user['packs']} · Balance: ${user['pokedollars']:.2f}")
 
+        # Discord allows max 10 embeds per message — send card images in batches first
+        await interaction.response.defer()
+        channel = interaction.channel
+
+        batches = [card_embeds[i:i+10] for i in range(0, len(card_embeds), 10)]
+        for batch in batches:
+            await channel.send(embeds=batch)
+
+        # Send summary + dupe buttons last
         if dupes:
             view = DupeView(self.cog, self.user, dupes, dupe_value)
-            msg  = await interaction.response.send_message(embed=embed, view=view)
-            view.msg = await interaction.original_response()
-            self.cog.user_messages[uid] = view.msg
+            msg  = await channel.send(embed=summary, view=view)
+            self.cog.user_messages[uid] = msg
         else:
-            await interaction.response.send_message(embed=embed)
-            self.cog.user_messages[uid] = await interaction.original_response()
+            msg = await channel.send(embed=summary)
+            self.cog.user_messages[uid] = msg
+
+        # What next prompt — auto delete after 60s if no action
+        next_msg = await channel.send(WHAT_NEXT)
+        await asyncio.sleep(60)
+        await safe_delete(next_msg)
 
     @discord.ui.button(label="Open 1", style=discord.ButtonStyle.primary, emoji="📦")
     async def open1(self, interaction, button):
@@ -497,12 +539,18 @@ class PokeCog(commands.Cog):
         ensure_user(self.db, uid, name)
 
         if self.db["users"][uid]["registered"]:
-            return await ctx.send(
-                embed=discord.Embed(
-                    description=f"**{name}**, you're already registered! Use `!openpack` to open packs.",
-                    color=0xe74c3c
-                )
+            user = self.db["users"][uid]
+            embed = discord.Embed(
+                title=f"🎴  {name}'s Pokécard Status",
+                description=(
+                    f"💰 **${user['pokedollars']:.2f}** Pokédollars\n"
+                    f"📦 **{user['packs']}** packs\n"
+                    f"🎴 **{len(set(user['cards']))}**/{TOTAL_CARDS} unique cards\n\n"
+                    + WHAT_NEXT
+                ),
+                color=0xf1c40f
             )
+            return await ctx.send(embed=embed)
 
         self.db["users"][uid].update(
             registered=True, pokedollars=STARTING_DOLLARS, packs=STARTING_PACKS
