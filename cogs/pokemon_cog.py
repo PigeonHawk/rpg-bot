@@ -13,7 +13,9 @@ WHAT_NEXT = (
     "`!mycards` — View your collection\n"
     "`!pokewallet` — Check balance\n"
     "`!selldupes` — Sell duplicate cards\n"
-    "`!trade @user <card>` — Trade with a player"
+    "`!trade @user <card>` — Trade with a player\n"
+    "`!pokedaily` — Claim $5 once per day\n"
+    "`!pokedaily` — Claim $5 Pokédollars once per day"
 )
 
 # ── GitHub raw image base URL ──────────────────────────────────────────────
@@ -25,7 +27,7 @@ DATA_FILE = os.path.join(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "."), "poke
 # ── Economy constants ──────────────────────────────────────────────────────
 STARTING_DOLLARS = 15.00
 STARTING_PACKS   = 3
-PACK_COST        = 30.00
+PACK_COST        = 4.00
 CARDS_PER_PACK   = 5
 
 # ── Duplicate payout per rarity ────────────────────────────────────────────
@@ -363,53 +365,65 @@ class DupeView(discord.ui.View):
 
 
 class CardBrowserView(discord.ui.View):
-    """Paginated card browser — 10 cards per page."""
+    """Paginated card browser — 5 cards per page with images."""
+    PAGE_SIZE = 5
+
     def __init__(self, cog, user, page=0, prev_msg=None):
         super().__init__(timeout=120)
         self.cog      = cog
         self.user     = user
         self.page     = page
         self.prev_msg = prev_msg
-        self.pages    = (TOTAL_CARDS + 9) // 10
+        self.pages    = (TOTAL_CARDS + self.PAGE_SIZE - 1) // self.PAGE_SIZE
         self._refresh_buttons()
 
     def _refresh_buttons(self):
         self.prev_btn.disabled = self.page == 0
         self.next_btn.disabled = self.page >= self.pages - 1
 
-    def build_embed(self):
-        uid      = str(self.user.id)
-        owned    = self.cog.db["users"][uid]["cards"]
+    def build_embeds(self):
+        uid       = str(self.user.id)
+        owned     = self.cog.db["users"][uid]["cards"]
         owned_set = {}
         for c in owned:
             owned_set[c] = owned_set.get(c, 0) + 1
 
-        start = self.page * 10
-        slice_ = CARD_ORDER[start: start + 10]
+        start  = self.page * self.PAGE_SIZE
+        slice_ = CARD_ORDER[start: start + self.PAGE_SIZE]
+        embeds = []
 
-        lines = []
         for i, cid in enumerate(slice_):
-            card  = CARDS[cid]
-            num   = start + i + 1
-            label, _ = RARITY_DISPLAY[card["rarity"]]
-            if cid in owned_set:
-                count = owned_set[cid]
-                cnt_str = f" ×{count}" if count > 1 else ""
-                lines.append(f"✅ **#{num} {card['name']}**{cnt_str} — {label}")
-            else:
-                lines.append(f"⬜ #{num} {card['name']} — {label}")
+            card   = CARDS[cid]
+            num    = start + i + 1
+            label, color = RARITY_DISPLAY[card["rarity"]]
 
+            if cid in owned_set:
+                count   = owned_set[cid]
+                cnt_str = f" ×{count}" if count > 1 else ""
+                e = discord.Embed(
+                    title=f"✅ #{num} {card['name']}{cnt_str}",
+                    description=label,
+                    color=color
+                )
+                e.set_image(url=card["image"])
+            else:
+                e = discord.Embed(
+                    title=f"⬜ #{num} {card['name']}",
+                    description=f"{label} — *Not yet collected*",
+                    color=0x2f3136
+                )
+            embeds.append(e)
+
+        # Nav embed
         total_unique = len(set(owned))
-        embed = discord.Embed(
-            title=f"🎴 {self.user.display_name}'s Collection",
-            description="\n".join(lines),
-            color=0x9b59b6
+        nav = discord.Embed(color=0x9b59b6)
+        nav.set_footer(
+            text=f"Page {self.page + 1}/{self.pages} · "
+                 f"{total_unique}/{TOTAL_CARDS} unique · "
+                 f"${self.cog.db['users'][uid]['pokedollars']:.2f} Pokédollars"
         )
-        embed.set_footer(
-            text=f"Page {self.page + 1}/{self.pages} · {total_unique}/{TOTAL_CARDS} unique · "
-                 f"${self.cog.db['users'][str(self.user.id)]['pokedollars']:.2f} Pokédollars"
-        )
-        return embed
+        embeds.append(nav)
+        return embeds
 
     @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
     async def prev_btn(self, interaction, button):
@@ -417,7 +431,7 @@ class CardBrowserView(discord.ui.View):
             return await interaction.response.send_message("This isn't your menu!", ephemeral=True)
         self.page -= 1
         self._refresh_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await interaction.response.edit_message(embeds=self.build_embeds(), view=self)
 
     @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
     async def next_btn(self, interaction, button):
@@ -425,7 +439,7 @@ class CardBrowserView(discord.ui.View):
             return await interaction.response.send_message("This isn't your menu!", ephemeral=True)
         self.page += 1
         self._refresh_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await interaction.response.edit_message(embeds=self.build_embeds(), view=self)
 
 
 class SellDupesView(discord.ui.View):
@@ -659,9 +673,9 @@ class PokeCog(commands.Cog):
 
         await self._delete_prev(str(ctx.author.id))
 
-        view  = CardBrowserView(self, target)
-        embed = view.build_embed()
-        msg   = await ctx.send(embed=embed, view=view)
+        view   = CardBrowserView(self, target)
+        embeds = view.build_embeds()
+        msg    = await ctx.send(embeds=embeds, view=view)
         self.user_messages[str(ctx.author.id)] = msg
 
     # ------------------------------------------------------------------ #
@@ -804,6 +818,43 @@ class PokeCog(commands.Cog):
                 )
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------ #
+    #  !pokedaily — claim 5 Pokédollars once per day                     #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="pokedaily")
+    async def pokedaily(self, ctx):
+        import datetime
+        uid  = str(ctx.author.id)
+        name = ctx.author.display_name
+        ensure_user(self.db, uid, name)
+
+        if not self.db["users"][uid]["registered"]:
+            return await ctx.send("Use `!pokecard` to register first!")
+
+        user    = self.db["users"][uid]
+        today   = datetime.date.today().isoformat()
+        last    = user.get("last_daily")
+
+        if last == today:
+            return await ctx.send(
+                embed=discord.Embed(
+                    description=f"**{name}**, you already claimed your daily today! Come back tomorrow.",
+                    color=0xe74c3c
+                )
+            )
+
+        user["last_daily"]   = today
+        user["pokedollars"]  = round(user["pokedollars"] + 5.00, 2)
+        save_data(self.db)
+
+        await ctx.send(embed=discord.Embed(
+            title="📅  Daily Reward!",
+            description=f"**{name}** claimed their daily **+$5.00 Pokédollars**!
+
+💰 Balance: **${user['pokedollars']:.2f}**",
+            color=0x2ecc71
+        ))
 
     # ------------------------------------------------------------------ #
     #  !pokehelp                                                          #
