@@ -255,30 +255,35 @@ class PackBuyView(discord.ui.View):
         for cid, card in new_cards:
             label, color = RARITY_DISPLAY[card["rarity"]]
             e = discord.Embed(title=f"✨ {card['name']}", description=label, color=color)
-            e.set_image(url=card["image"])
+            e.set_thumbnail(url=card["image"])
             card_embeds.append(e)
         for cid, card, val in dupes:
             label, color = RARITY_DISPLAY[card["rarity"]]
             e = discord.Embed(title=f"🔄 {card['name']} *(duplicate)*", description=f"{label} · +${val:.2f}", color=color)
-            e.set_image(url=card["image"])
+            e.set_thumbnail(url=card["image"])
             card_embeds.append(e)
 
         # Summary embed
-        summary_lines = []
-        for cid, card in new_cards:
-            label, _ = RARITY_DISPLAY[card["rarity"]]
-            summary_lines.append(f"✨ **{card['name']}** — {label}")
-        for cid, card, val in dupes:
-            label, _ = RARITY_DISPLAY[card["rarity"]]
-            summary_lines.append(f"🔄 **{card['name']}** — {label} *(dupe +${val:.2f})*")
+        new_lines  = [f"✨ **{c['name']}** — {RARITY_DISPLAY[c['rarity']][0]}" for _, c in new_cards]
+        dupe_lines = [f"🔄 **{c['name']}** — {RARITY_DISPLAY[c['rarity']][0]} *(+${v:.2f})*" for _, c, v in dupes]
+
+        desc_parts = []
+        if new_lines:
+            desc_parts.append(f"**🆕 {len(new_cards)} New Card(s):**
+" + "\n".join(new_lines))
+        if dupe_lines:
+            desc_parts.append(f"**🔄 {len(dupes)} Duplicate(s):**
+" + "\n".join(dupe_lines))
 
         summary = discord.Embed(
             title=f"📦 {self.user.display_name} opens {count} pack{'s' if count > 1 else ''}!",
-            description="\n".join(summary_lines) or "No cards pulled.",
+            description="\n\n".join(desc_parts) or "No cards pulled.",
             color=0x3498db
         )
+        if new_cards:
+            summary.add_field(name="New Cards", value=str(len(new_cards)), inline=True)
         if dupes:
-            summary.add_field(name="Duplicate Payout", value=f"${dupe_value:.2f} Pokédollars", inline=True)
+            summary.add_field(name="Duplicates", value=f"{len(dupes)} (+${dupe_value:.2f})", inline=True)
         summary.set_footer(text=f"Packs left: {user['packs']} · Balance: ${user['pokedollars']:.2f}")
 
         # Discord allows max 10 embeds per message — send card images in batches first
