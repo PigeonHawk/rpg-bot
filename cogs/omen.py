@@ -212,6 +212,50 @@ class OmenCog(commands.Cog):
         await ctx.send(f"💩 **Shit Fact:** {fact}")
 
     # ------------------------------------------------------------------ #
+    #  !dmconfess — DM-based anonymous confession                        #
+    # ------------------------------------------------------------------ #
+    @commands.command(name="dmconfess")
+    async def dmconfess(self, ctx: commands.Context):
+        # Delete the command message immediately
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        # DM the user asking for their confession
+        try:
+            await ctx.author.send("What would you like to confess? Reply here and it will be posted anonymously in the confessions channel.")
+        except discord.Forbidden:
+            return  # User has DMs closed, silently fail
+
+        # Wait for their reply in DMs
+        def check(m):
+            return m.author.id == ctx.author.id and isinstance(m.channel, discord.DMChannel)
+
+        try:
+            reply = await self.bot.wait_for("message", check=check, timeout=120)
+        except asyncio.TimeoutError:
+            try:
+                await ctx.author.send("Confession timed out. Use !dmconfess again if you still want to confess.")
+            except Exception:
+                pass
+            return
+
+        # Find confessions channel and post anonymously
+        confession_channel = None
+        if ctx.guild:
+            confession_channel = discord.utils.find(
+                lambda c: "confessions" in c.name.lower(), ctx.guild.text_channels
+            )
+
+        if confession_channel:
+            await confession_channel.send(f"**Anonymous Confession:** {reply.content}")
+            try:
+                await ctx.author.send("Your confession has been posted anonymously.")
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ #
     #  !confess — anonymous confession posted in bot-channel             #
     # ------------------------------------------------------------------ #
     @commands.command(name="confess")
