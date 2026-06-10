@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import random
 import asyncio
+import json
+import os
 from datetime import datetime
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -51,17 +53,12 @@ def index_to_coord(idx: int) -> str:
 
 
 def check_bingo(marked: list[bool]) -> bool:
-    for row in range(5):
-        if all(marked[row * 5 + col] for col in range(5)):
-            return True
+    """Win by having at least one marked square in every column (B, I, N, G, O).
+    N3 is always pre-marked so column N is always satisfied from the start."""
     for col in range(5):
-        if all(marked[row * 5 + col] for row in range(5)):
-            return True
-    if all(marked[i * 6] for i in range(5)):
-        return True
-    if all(marked[4 + i * 4] for i in range(5)):
-        return True
-    return False
+        if not any(marked[row * 5 + col] for row in range(5)):
+            return False
+    return True
 
 
 # ── Session data structure ────────────────────────────────────────────────────
@@ -79,6 +76,32 @@ def check_bingo(marked: list[bool]) -> bool:
 # }
 
 active_sessions: dict[int, dict] = {}
+
+# Win counts saved to data/bingo_wins.json so they persist across restarts.
+LEADERBOARD_PATH = "data/bingo_wins.json"
+
+
+def load_leaderboard() -> dict[int, dict]:
+    """Load win data from disk, keyed by int user_id."""
+    if not os.path.exists(LEADERBOARD_PATH):
+        return {}
+    try:
+        with open(LEADERBOARD_PATH, "r") as f:
+            raw = json.load(f)
+        # JSON keys are always strings — convert back to int
+        return {int(k): v for k, v in raw.items()}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_leaderboard(lb: dict[int, dict]) -> None:
+    """Save win data to disk."""
+    os.makedirs(os.path.dirname(LEADERBOARD_PATH), exist_ok=True)
+    with open(LEADERBOARD_PATH, "w") as f:
+        json.dump(lb, f, indent=2)
+
+
+win_leaderboard: dict[int, dict] = load_leaderboard()
 
 
 # ── Embed builders ────────────────────────────────────────────────────────────
@@ -243,7 +266,7 @@ class ValorantBingo(commands.Cog):
             title="🟥 Valorant Bingo — Game Started!",
             description=(
                 f"**{count} player{'s' if count != 1 else ''} joined:** {player_mentions}\n\n"
-                f"**How to win:** Be the first to mark a complete **row**, **column**, or **diagonal** on the bingo card below.\n\n"
+                f"**How to win:** Spell out **B-I-N-G-O** — mark at least one square in each column (B, I, N, G, O). Any rows, any combo!\n\n"
                 f"**How to mark a square:**\n"
                 f"Each square has a coordinate — a **column letter** (B I N G O) + a **row number** (1–5).\n"
                 f"Just type `!` followed by the coordinate, e.g. `!B1`, `!N4`, `!O5`.\n\n"
@@ -471,6 +494,14 @@ class ValorantBingo(commands.Cog):
 
             del active_sessions[channel_id]
 
+            # Record win on leaderboard
+            uid = message.author.id
+            if uid not in win_leaderboard:
+                win_leaderboard[uid] = {"name": message.author.display_name, "wins": 0}
+            win_leaderboard[uid]["wins"] += 1
+            win_leaderboard[uid]["name"] = message.author.display_name  # keep name fresh
+            save_leaderboard(win_leaderboard)  # persist to disk
+
             await message.channel.send(
                 f"🎉 **BINGO!** {message.author.mention} got **{square_name}** (`{coord}`) and wins!\n"
                 f"Use `!bingo` to start a new game.",
@@ -491,6 +522,31 @@ class ValorantBingo(commands.Cog):
             except (discord.Forbidden, discord.NotFound):
                 pass
 
+    # ── !bingo leaderboard ───────────────────────────────────────────────────
+
+    @bingo.command(name="leaderboard")
+    async def bingo_leaderboard(self, ctx: commands.Context):
+        """Show the all-time bingo win leaderboard."""
+        if not win_leaderboard:
+            await ctx.send("🏆 No wins recorded yet — start a game with `!bingo`!")
+            return
+
+        sorted_lb = sorted(win_leaderboard.items(), key=lambda x: x[1]["wins"], reverse=True)
+
+        medals = ["🥇", "🥈", "🥉"]
+        lines = []
+        for i, (uid, data) in enumerate(sorted_lb):
+            prefix = medals[i] if i < 3 else f"`{i+1}.`"
+            lines.append(f"{prefix} **{data['name']}** — {data['wins']} win{'s' if data['wins'] != 1 else ''}")
+
+        embed = discord.Embed(
+            title="🏆 Valorant Bingo — Leaderboard",
+            description="\n".join(lines),
+            color=discord.Color.gold(),
+        )
+        embed.set_footer(text="Wins are tracked for this session. Restarting the bot resets the leaderboard.")
+        await ctx.send(embed=embed)
+
     # ── !help_bingo ───────────────────────────────────────────────────────────
 
     @commands.command(name="help_bingo")
@@ -500,7 +556,9 @@ class ValorantBingo(commands.Cog):
         embed.add_field(
             name="🏆 How to Win",
             value=(
-                "Be the first player to mark a complete **row**, **column**, or **diagonal** on the bingo card.\n"
+                "Spell out **B-I-N-G-O** — mark at least **one square in each column** (B, I, N, G, O).\n"
+                "The squares don't need to be in the same row — any combination across columns counts!\n"
+                "Column **N** is pre-satisfied since N3 (FREE SPACE) is always marked.\n"
                 "The bot checks automatically after every mark — no manual call needed!"
             ),
             inline=False,
@@ -522,8 +580,8 @@ class ValorantBingo(commands.Cog):
         embed.add_field(
             name="🎮 Starting & Joining",
             value=(
-                "`!bingo` — Open a lobby (30 seconds for others to join)\n"
-                "`!bingo join` — Join an open lobby before it starts\n"
+                "`!bingo` / `!bstart` — Open a lobby (30 seconds for others to join)\n"
+                "`!bingo join` / `!bjoin` — Join an open lobby before it starts\n"
             ),
             inline=False,
         )
@@ -531,11 +589,12 @@ class ValorantBingo(commands.Cog):
             name="📋 During the Game",
             value=(
                 "`!B1` `!N4` `!O5` etc. — Mark a square *(auto-deletes in 10s)*\n"
-                "`!bingo board` — See your personal card & mark history *(auto-deletes in 15s)*\n"
-                "`!bingo ref` — See every square and its coordinate *(auto-deletes in 15s)*\n"
-                "`!bingo card` — Show the bingo card image\n"
-                "`!bingo scores` — See how many squares each player has marked\n"
-                "`!bingo end` / `!bingo stop` — Stop & reset the session (host only)\n"
+                "`!bingo board` / `!bboard` — See your personal card *(auto-deletes in 15s)*\n"
+                "`!bingo ref` / `!bref` — See every square and its coordinate *(auto-deletes in 15s)*\n"
+                "`!bingo card` / `!bcard` — Show the bingo card image\n"
+                "`!bingo scores` / `!bscores` — See how many squares each player has marked\n"
+                "`!bingo stop` / `!bstop` — Stop & reset the session (host only)\n"
+                "`!bingo leaderboard` / `!bleaderboard` — Show all-time win leaderboard\n"
             ),
             inline=False,
         )
@@ -547,3 +606,58 @@ class ValorantBingo(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ValorantBingo(bot))
+
+
+# ── Shortcut standalone commands (aliases for the bingo group) ────────────────
+# These are registered AFTER the cog so they can reference it via bot.cogs.
+# Added in setup() via add_command so they work as top-level prefix commands.
+
+def _make_shortcuts(bot: commands.Bot):
+    cog = bot.cogs.get("ValorantBingo")
+    if not cog:
+        return
+
+    @bot.command(name="bstart")
+    async def bstart(ctx):
+        """Alias for !bingo — start a new bingo lobby."""
+        await ctx.invoke(cog.bingo)
+
+    @bot.command(name="bjoin")
+    async def bjoin(ctx):
+        """Alias for !bingo join."""
+        await ctx.invoke(cog.bingo_join)
+
+    @bot.command(name="bboard")
+    async def bboard(ctx):
+        """Alias for !bingo board."""
+        await ctx.invoke(cog.bingo_board)
+
+    @bot.command(name="bref")
+    async def bref(ctx):
+        """Alias for !bingo ref."""
+        await ctx.invoke(cog.bingo_ref)
+
+    @bot.command(name="bcard")
+    async def bcard(ctx):
+        """Alias for !bingo card."""
+        await ctx.invoke(cog.bingo_card)
+
+    @bot.command(name="bscores")
+    async def bscores(ctx):
+        """Alias for !bingo scores."""
+        await ctx.invoke(cog.bingo_scores)
+
+    @bot.command(name="bstop")
+    async def bstop(ctx):
+        """Alias for !bingo stop."""
+        await ctx.invoke(cog.bingo_stop)
+
+    @bot.command(name="bleaderboard")
+    async def bleaderboard(ctx):
+        """Alias for !bingo leaderboard."""
+        await ctx.invoke(cog.bingo_leaderboard)
+
+
+async def setup(bot: commands.Bot):  # noqa: F811 — intentional redefinition
+    await bot.add_cog(ValorantBingo(bot))
+    _make_shortcuts(bot)
