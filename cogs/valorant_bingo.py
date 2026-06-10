@@ -29,6 +29,7 @@ BINGO_SQUARES = [
 FREE_SPACE_IDX = 12  # N3
 
 LOBBY_JOIN_SECONDS = 30
+CARD_PATH = "assets/bingo_card.jpg"
 
 
 def coord_to_index(col_letter: str, row_num: int) -> int | None:
@@ -247,10 +248,12 @@ class ValorantBingo(commands.Cog):
                 f"Each square has a coordinate — a **column letter** (B I N G O) + a **row number** (1–5).\n"
                 f"Just type `!` followed by the coordinate, e.g. `!B1`, `!N4`, `!O5`.\n\n"
                 f"🆓 `N3` is the **FREE SPACE** — already marked for everyone. You cannot call it.\n"
-                f"🗑️ Your mark message will auto-delete after 10 seconds to keep chat clean.\n\n"
+                f"🗑️ Square marks auto-delete after **10 seconds**.\n"
+                f"🗑️ `!bingo board` and `!bingo ref` auto-delete after **15 seconds**.\n\n"
                 f"**Useful commands:**\n"
-                f"`!bingo board` — See your personal card & what you've marked\n"
-                f"`!bingo ref` — See every square and its coordinate\n"
+                f"`!bingo board` — See your personal card & what you've marked *(15s)*\n"
+                f"`!bingo ref` — See every square and its coordinate *(15s)*\n"
+                f"`!bingo card` — Show the bingo card image\n"
                 f"`!bingo scores` — See everyone's progress\n"
                 f"`!help_bingo` — Full command list"
             ),
@@ -259,6 +262,14 @@ class ValorantBingo(commands.Cog):
         card_embed = build_shared_card_embed()
         await ctx.send(embed=start_embed)
         await ctx.send(embed=card_embed)
+        # Send the actual bingo card image
+        try:
+            await ctx.send(
+                "📸 **Here's your bingo card for this session:**",
+                file=discord.File(CARD_PATH, filename="bingo_card.jpg"),
+            )
+        except FileNotFoundError:
+            await ctx.send("⚠️ Could not find the bingo card image at `assets/bingo_card.jpg`.")
 
     # ── !bingo join ───────────────────────────────────────────────────────────
 
@@ -303,14 +314,45 @@ class ValorantBingo(commands.Cog):
 
         data = sess["players"][ctx.author.id]
         embed = build_board_embed(ctx.author, data["marked"], data["log"])
-        await ctx.send(embed=embed)
+        bot_msg = await ctx.send(embed=embed)
+        await asyncio.sleep(15)
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+        try:
+            await bot_msg.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
 
     # ── !bingo ref ────────────────────────────────────────────────────────────
 
     @bingo.command(name="ref")
     async def bingo_ref(self, ctx: commands.Context):
         """Show the full coordinate reference card."""
-        await ctx.send(embed=build_reference_embed())
+        bot_msg = await ctx.send(embed=build_reference_embed())
+        await asyncio.sleep(15)
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+        try:
+            await bot_msg.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+
+    # ── !bingo card ───────────────────────────────────────────────────────────
+
+    @bingo.command(name="card")
+    async def bingo_card(self, ctx: commands.Context):
+        """Show the bingo card image."""
+        try:
+            await ctx.send(
+                "🎯 **Valorant Bingo Card**",
+                file=discord.File(CARD_PATH, filename="bingo_card.jpg"),
+            )
+        except FileNotFoundError:
+            await ctx.send("⚠️ Could not find the bingo card image at `assets/bingo_card.jpg`.")
 
     # ── !bingo scores ─────────────────────────────────────────────────────────
 
@@ -323,20 +365,28 @@ class ValorantBingo(commands.Cog):
             return
         await ctx.send(embed=build_scoreboard_embed(sess))
 
-    # ── !bingo end ────────────────────────────────────────────────────────────
+    # ── !bingo end / !bingo stop ─────────────────────────────────────────────
 
     @bingo.command(name="end")
     async def bingo_end(self, ctx: commands.Context):
-        """End the current game (host only)."""
+        """End the current game (host only). Alias: !bingo stop"""
         sess = self.get_session(ctx.channel.id)
         if not sess:
             await ctx.send(f"❌ No active session in this channel.")
             return
         if ctx.author.id != sess["host"].id:
-            await ctx.send(f"⚠️ {ctx.author.mention} Only the host ({sess['host'].display_name}) can end the game.")
+            await ctx.send(f"⚠️ {ctx.author.mention} Only the host ({sess['host'].display_name}) can stop the game.")
             return
         del active_sessions[ctx.channel.id]
-        await ctx.send(f"🛑 Bingo session ended by {ctx.author.mention}. Start a new one with `!bingo`.")
+        await ctx.send(
+            f"🛑 Bingo session stopped by {ctx.author.mention}. "
+            f"The board has been reset — start a fresh game with `!bingo`."
+        )
+
+    @bingo.command(name="stop")
+    async def bingo_stop(self, ctx: commands.Context):
+        """Stop and reset the current game (host only). Alias: !bingo end"""
+        await ctx.invoke(self.bingo_end)
 
     # ── Coordinate marking: !B1, !N4, !O5, etc. ──────────────────────────────
 
@@ -464,7 +514,8 @@ class ValorantBingo(commands.Cog):
                 "To mark a square, type `!` + the coordinate:\n"
                 "`!B1` = top-left | `!O5` = bottom-right | `!N4` = column N, row 4\n\n"
                 "🆓 `N3` is the **FREE SPACE** — pre-marked for all, cannot be called.\n"
-                "🗑️ Your mark message auto-deletes after **10 seconds**."
+                "🗑️ Square marks auto-delete after **10 seconds**.\n"
+                "🗑️ `!bingo board` and `!bingo ref` auto-delete after **15 seconds**."
             ),
             inline=False,
         )
@@ -479,11 +530,12 @@ class ValorantBingo(commands.Cog):
         embed.add_field(
             name="📋 During the Game",
             value=(
-                "`!B1` `!N4` `!O5` etc. — Mark a square\n"
-                "`!bingo board` — See your personal card & mark history\n"
-                "`!bingo ref` — See every square and its coordinate\n"
+                "`!B1` `!N4` `!O5` etc. — Mark a square *(auto-deletes in 10s)*\n"
+                "`!bingo board` — See your personal card & mark history *(auto-deletes in 15s)*\n"
+                "`!bingo ref` — See every square and its coordinate *(auto-deletes in 15s)*\n"
+                "`!bingo card` — Show the bingo card image\n"
                 "`!bingo scores` — See how many squares each player has marked\n"
-                "`!bingo end` — End the session early (host only)\n"
+                "`!bingo end` / `!bingo stop` — Stop & reset the session (host only)\n"
             ),
             inline=False,
         )
