@@ -242,10 +242,17 @@ class ValorantBingo(commands.Cog):
             title="🟥 Valorant Bingo — Game Started!",
             description=(
                 f"**{count} player{'s' if count != 1 else ''} joined:** {player_mentions}\n\n"
-                f"Mark a square by typing its coordinate, e.g. `!N4` or `!B1`.\n"
-                f"`N3` is the FREE SPACE — already marked for everyone, can't be called.\n\n"
-                f"Use `!bingo board` to see your personal tracking card.\n"
-                f"Use `!bingo ref` for the column-by-column reference."
+                f"**How to win:** Be the first to mark a complete **row**, **column**, or **diagonal** on the bingo card below.\n\n"
+                f"**How to mark a square:**\n"
+                f"Each square has a coordinate — a **column letter** (B I N G O) + a **row number** (1–5).\n"
+                f"Just type `!` followed by the coordinate, e.g. `!B1`, `!N4`, `!O5`.\n\n"
+                f"🆓 `N3` is the **FREE SPACE** — already marked for everyone. You cannot call it.\n"
+                f"🗑️ Your mark message will auto-delete after 10 seconds to keep chat clean.\n\n"
+                f"**Useful commands:**\n"
+                f"`!bingo board` — See your personal card & what you've marked\n"
+                f"`!bingo ref` — See every square and its coordinate\n"
+                f"`!bingo scores` — See everyone's progress\n"
+                f"`!help_bingo` — Full command list"
             ),
             color=discord.Color.red(),
         )
@@ -441,35 +448,46 @@ class ValorantBingo(commands.Cog):
         """Show all Valorant Bingo commands."""
         embed = discord.Embed(title="🎯 Valorant Bingo — How to Play", color=discord.Color.red())
         embed.add_field(
-            name="Starting & Joining",
+            name="🏆 How to Win",
             value=(
-                "`!bingo` — Open a lobby (30s for others to join)\n"
-                "`!bingo join` — Join an open lobby\n"
+                "Be the first player to mark a complete **row**, **column**, or **diagonal** on the bingo card.\n"
+                "The bot checks automatically after every mark — no manual call needed!"
             ),
             inline=False,
         )
         embed.add_field(
-            name="During the Game",
+            name="📍 How Coordinates Work",
             value=(
-                "`!B1` `!N4` `!O5` etc. — Mark a square by its coordinate\n"
-                "`!bingo board` — See your personal bingo card\n"
-                "`!bingo ref` — See all squares and their coordinates\n"
-                "`!bingo scores` — See how many squares each player has\n"
-                "`!bingo end` — End the game (host only)\n"
+                "The card is a 5x5 grid. Each square has a coordinate:\n"
+                "**Columns:** `B` `I` `N` `G` `O` — left to right\n"
+                "**Rows:** `1` `2` `3` `4` `5` — top to bottom\n\n"
+                "To mark a square, type `!` + the coordinate:\n"
+                "`!B1` = top-left | `!O5` = bottom-right | `!N4` = column N, row 4\n\n"
+                "🆓 `N3` is the **FREE SPACE** — pre-marked for all, cannot be called.\n"
+                "🗑️ Your mark message auto-deletes after **10 seconds**."
             ),
             inline=False,
         )
         embed.add_field(
-            name="Coordinates",
+            name="🎮 Starting & Joining",
             value=(
-                "Columns: **B I N G O** (left to right)\n"
-                "Rows: **1–5** (top to bottom)\n"
-                "Example: `!N4` = column N, row 4\n"
-                "`N3` is the FREE SPACE — pre-marked for everyone, can't be called."
+                "`!bingo` — Open a lobby (30 seconds for others to join)\n"
+                "`!bingo join` — Join an open lobby before it starts\n"
             ),
             inline=False,
         )
-        embed.set_footer(text="First player to complete a full row, column, or diagonal wins!")
+        embed.add_field(
+            name="📋 During the Game",
+            value=(
+                "`!B1` `!N4` `!O5` etc. — Mark a square\n"
+                "`!bingo board` — See your personal card & mark history\n"
+                "`!bingo ref` — See every square and its coordinate\n"
+                "`!bingo scores` — See how many squares each player has marked\n"
+                "`!bingo end` — End the session early (host only)\n"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="Good luck out there, Agent! 🎯")
         await ctx.send(embed=embed)
 
 
