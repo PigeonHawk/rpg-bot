@@ -28,8 +28,9 @@ async def main():
         await bot.load_extension("cogs.omen")
         await bot.load_extension("cogs.pokemon_cog")
         await bot.load_extension("cogs.valorant_bingo")
-        await bot.start(TOKEN)
         await bot.load_extension("cogs.quotes")
+        await bot.start(TOKEN)
+      
 @bot.event
 async def on_ready():
     print(f"✅ {bot.user} is online and ready!")
