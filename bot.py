@@ -29,7 +29,7 @@ async def main():
         await bot.load_extension("cogs.pokemon_cog")
         await bot.load_extension("cogs.valorant_bingo")
         await bot.load_extension("cogs.quotes")
-         await bot.load_extension("cogs.contexto")
+        await bot.load_extension("cogs.contexto")
         await bot.start(TOKEN)
       
 @bot.event
