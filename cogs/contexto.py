@@ -41,6 +41,40 @@ log = logging.getLogger(__name__)
 DATA_DIR = os.getenv("CONTEXTO_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
 STATE_PATH = os.getenv("CONTEXTO_STATE_PATH", os.path.join(DATA_DIR, "contexto_state.json"))
 
+# Where the vectors live, and (optionally) where to fetch them if missing.
+# Set CONTEXTO_VECTORS_PATH to a path on your Railway volume (e.g. /data/contexto_vectors.npy)
+# so the download happens once and survives redeploys. Set CONTEXTO_VECTORS_URL to a GitHub
+# Release asset URL. If the file already exists locally, nothing is downloaded.
+VECTORS_PATH = os.getenv("CONTEXTO_VECTORS_PATH", os.path.join(DATA_DIR, "contexto_vectors.npy"))
+VECTORS_URL = os.getenv("CONTEXTO_VECTORS_URL")
+
+
+def _ensure_vectors(path, url):
+    """Make sure the vectors file exists locally, downloading it once if a URL is provided."""
+    if os.path.exists(path):
+        return
+    if not url:
+        raise FileNotFoundError(
+            f"Vectors file not found at {path}, and CONTEXTO_VECTORS_URL is not set. "
+            "Either commit contexto_vectors.npy, or set CONTEXTO_VECTORS_URL to a "
+            "GitHub Release asset URL so it can be downloaded on startup."
+        )
+    import urllib.request
+    import shutil
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    log.info("Contexto: vectors missing, downloading from %s", url)
+    tmp = path + ".part"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "contexto-cog"})
+        with urllib.request.urlopen(req) as resp, open(tmp, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        os.replace(tmp, path)  # atomic: never leaves a half file at the real path
+        log.info("Contexto: vectors downloaded to %s", path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
 # Rank bands for the hot/warm/cold bar (tuned to the 316k vocab).
 GREEN = 300       # very close
 ORANGE = 1500     # getting warm
@@ -48,11 +82,13 @@ ORANGE = 1500     # getting warm
 
 BAR_WIDTH = 10
 BOARD_ROWS = 20            # how many sorted guesses to show on the board
-GUESS_TTL = 3             # seconds before a player's guess message is deleted
+DELETE_TTL = 5            # seconds before ANY user message is deleted while a game is active
+DELETE_ALL_USER_MESSAGES = True   # True: clear all chatter/commands too; False: only guesses
 FEEDBACK_TTL = 3          # seconds before the little confirm/❌ message is deleted
 SHOW_FEEDBACK = True      # set False to rely on the board alone
 
 # Inactivity timeout. The clock resets on every guess.
+IDLE_TIMEOUT_ENABLED = False   # False = games never auto-end on inactivity (no warning, no stop)
 IDLE_WARN = 120           # seconds of silence before a "60s left" warning is posted
 IDLE_GRACE = 60           # extra seconds after the warning before the game auto-ends
 
@@ -133,7 +169,8 @@ class Contexto(commands.Cog):
         self.bot = bot
         self.prefix = "!"
 
-        self.vectors = np.load(os.path.join(DATA_DIR, "contexto_vectors.npy")).astype(np.float32)
+        _ensure_vectors(VECTORS_PATH, VECTORS_URL)
+        self.vectors = np.load(VECTORS_PATH).astype(np.float32)
         with open(os.path.join(DATA_DIR, "contexto_vocab.txt")) as f:
             self.vocab = f.read().split("\n")
         self.word_to_idx = {w: i for i, w in enumerate(self.vocab)}
@@ -297,6 +334,8 @@ class Contexto(commands.Cog):
 
     def _arm_timeout(self, channel, game):
         """(Re)start the inactivity clock and clear any standing warning."""
+        if not IDLE_TIMEOUT_ENABLED:
+            return
         self._cancel_timeout(channel.id)
         warn = self._warn_msgs.pop(channel.id, None)
         if warn is not None:
@@ -463,14 +502,25 @@ class Contexto(commands.Cog):
         if not game or game.solved_by is not None:
             return
 
+        # A game is active in this channel. Keep it clean by clearing user messages.
+        # If DELETE_ALL_USER_MESSAGES is on, every non-bot message (chatter, commands,
+        # non-word guesses, everything) is removed after DELETE_TTL. Otherwise only
+        # guess-shaped messages are removed (below). The bot's own board/feedback are
+        # bot messages, so they're never caught here.
+        scheduled = False
+        if DELETE_ALL_USER_MESSAGES:
+            asyncio.create_task(self._delete_later(message, DELETE_TTL))
+            scheduled = True
+
         content = message.content.strip().lower()
         if not content or content.startswith(self.prefix):
-            return
+            return  # commands are handled by the command system; message already cleared above
         if len(content.split()) != 1 or not content.isalpha():
-            return
+            return  # multi-word / non-alpha chatter: nothing to score (cleared above if enabled)
 
-        # always clear the player's raw guess shortly, to keep focus on the board
-        asyncio.create_task(self._delete_later(message, GUESS_TTL))
+        # ensure guess-shaped messages get cleared even when blanket deletion is off
+        if not scheduled:
+            asyncio.create_task(self._delete_later(message, DELETE_TTL))
 
         word, note = self.resolve(content)
         if word is None:
