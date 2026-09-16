@@ -21,7 +21,6 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 async def main():
     async with bot:
         await bot.load_extension("cogs.tt")
-        await bot.load_extension("cogs.chud")
         await bot.load_extension("cogs.hamtaro")
         await bot.load_extension("cogs.movies")
         await bot.load_extension("cogs.oogway")
