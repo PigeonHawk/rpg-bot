@@ -1,7 +1,7 @@
 """
-jumpscare.py — a jumpscare cog using Tenor API for horror GIFs.
+jumpscare.py — a jumpscare cog using Giphy API for horror GIFs.
 
-Pull random GIFs from Tenor's horror/jumpscare collection and post them with
+Pull random GIFs from Giphy's horror/jumpscare collection and post them with
 optional user mentions. Safelist certain members to auto-spoiler their jumpscares.
 
 Commands:
@@ -13,8 +13,9 @@ Commands:
     !jumpscare safelist                show who's on the safelist
 
 Setup:
-  Get a free Tenor API key at https://tenor.com/developer/dashboard
-  Set TENOR_API_KEY env var in Railway (or locally)
+  Get a free Giphy API key at https://developers.giphy.com/dashboard
+  Sign up -> Create an App -> grab your API key
+  Set GIPHY_API_KEY env var in Railway (or locally)
   
 Persistence (point at Railway volume to survive redeploys):
   JUMPSCARE_STATE_PATH   default: data/jumpscare.json
@@ -33,8 +34,8 @@ from discord.ext import commands
 
 log = logging.getLogger(__name__)
 
-TENOR_API_KEY = os.getenv("TENOR_API_KEY")
-TENOR_BASE = "https://tenor.googleapis.com/v2/search"
+GIPHY_API_KEY = os.getenv("GIPHY_API_KEY")
+GIPHY_SEARCH = "https://api.giphy.com/v1/gifs/search"
 
 DATA_DIR = os.getenv("JUMPSCARE_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
 STATE_PATH = os.getenv("JUMPSCARE_STATE_PATH", os.path.join(DATA_DIR, "jumpscare.json"))
@@ -59,8 +60,8 @@ class Jumpscare(commands.Cog):
         self.bot = bot
         self.data = {"guilds": {}}
         self._load()
-        if not TENOR_API_KEY:
-            log.warning("Jumpscare: TENOR_API_KEY not set — cog will not work")
+        if not GIPHY_API_KEY:
+            log.warning("Jumpscare: GIPHY_API_KEY not set — cog will not work")
 
     # ---------- persistence ----------
 
@@ -107,35 +108,35 @@ class Jumpscare(commands.Cog):
         return ctx.guild.get_member_named(token)
 
     async def _fetch_gif(self):
-        """Fetch a random horror GIF from Tenor API."""
-        if not TENOR_API_KEY:
+        """Fetch a random horror GIF from Giphy API."""
+        if not GIPHY_API_KEY:
             return None
         try:
             query = random.choice(SEARCH_QUERIES)
             resp = requests.get(
-                TENOR_BASE,
+                GIPHY_SEARCH,
                 params={
                     "q": query,
-                    "key": TENOR_API_KEY,
+                    "api_key": GIPHY_API_KEY,
                     "limit": 20,
-                    "contentfilter": "off",
+                    "rating": "pg-13",
                 },
                 timeout=5,
             )
             resp.raise_for_status()
             data = resp.json()
-            if data.get("results"):
-                result = random.choice(data["results"])
-                return result["media_formats"]["gif"]["url"]
+            if data.get("data"):
+                result = random.choice(data["data"])
+                return result["images"]["original"]["url"]
         except Exception as e:
-            log.error("Jumpscare: Tenor API error: %s", e)
+            log.error("Jumpscare: Giphy API error: %s", e)
         return None
 
     @commands.group(name="jumpscare", aliases=["scare", "horror"], invoke_without_command=True)
     async def jumpscare(self, ctx, target=None):
         """Post a random horror GIF. Optionally ping a user: !jumpscare @user or !jumpscare username"""
-        if not TENOR_API_KEY:
-            return await ctx.send("⚠️ Tenor API key not configured.")
+        if not GIPHY_API_KEY:
+            return await ctx.send("⚠️ Giphy API key not configured.")
 
         async with ctx.typing():
             gif_url = await self._fetch_gif()
