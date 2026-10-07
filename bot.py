@@ -29,7 +29,6 @@ async def main():
         await bot.load_extension("cogs.quotes")
         await bot.load_extension("cogs.contexto")
         await bot.load_extension("cogs.birthday")
-        await bot.load_extension("cogs.fakerole")
         await bot.load_extension("cogs.jumpscare")
         await bot.start(TOKEN)
       
