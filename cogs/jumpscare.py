@@ -110,9 +110,11 @@ class Jumpscare(commands.Cog):
     async def _fetch_gif(self):
         """Fetch a random horror GIF from Giphy API."""
         if not GIPHY_API_KEY:
+            log.warning("Jumpscare: GIPHY_API_KEY not set")
             return None
         try:
             query = random.choice(SEARCH_QUERIES)
+            log.info("Jumpscare: fetching with query '%s'", query)
             resp = requests.get(
                 GIPHY_SEARCH,
                 params={
@@ -123,11 +125,18 @@ class Jumpscare(commands.Cog):
                 },
                 timeout=5,
             )
+            log.info("Jumpscare: got response status %s", resp.status_code)
             resp.raise_for_status()
             data = resp.json()
+            log.info("Jumpscare: response has %d results", len(data.get("data", [])))
             if data.get("data"):
                 result = random.choice(data["data"])
-                return result["images"]["original"]["url"]
+                url = result["images"]["original"]["url"]
+                log.info("Jumpscare: returning URL")
+                return url
+            else:
+                log.warning("Jumpscare: no data in response")
+                return None
         except Exception as e:
             log.error("Jumpscare: Giphy API error: %s", e)
         return None
