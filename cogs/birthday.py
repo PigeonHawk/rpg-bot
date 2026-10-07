@@ -83,6 +83,34 @@ def parse_birthday(text: str):
     return None
 
 
+def parse_entries(tokens):
+    """Parse a flat token list like [vivi, oct, 5, wreck, oct, 7] into
+    [(name, (month, day, year)), ...], plus a list of leftover name tokens we
+    couldn't attach a date to. Dates may be 1-3 tokens; we take the longest that parses."""
+    entries, leftovers = [], []
+    i = 0
+    while i < len(tokens):
+        # strip list punctuation (bullets, dashes, commas, numbering) from the name token
+        name = tokens[i].strip(" \t\r\n.,;:!?*•·()[]-\u2013\u2014")
+        i += 1
+        if not name:
+            continue  # pure punctuation / bullet marker — skip silently
+        parsed, consumed = None, 0
+        for length in (3, 2, 1):
+            if i + length <= len(tokens):
+                cand = " ".join(tokens[i:i + length])
+                p = parse_birthday(cand)
+                if p:
+                    parsed, consumed = p, length
+                    break
+        if parsed:
+            entries.append((name, parsed))
+            i += consumed
+        else:
+            leftovers.append(name)
+    return entries, leftovers
+
+
 def fmt_date(month: int, day: int, year=None) -> str:
     s = f"{MONTHS[month - 1]} {day}"
     return f"{s}, {year}" if year else s
@@ -171,32 +199,74 @@ class Birthday(commands.Cog):
         """Birthday tracker. Try `!birthday set <date>` or `!birthday list`."""
         await ctx.send_help(ctx.command)
 
-    @birthday.command(name="set", aliases=["add", "log"])
-    async def set_birthday(self, ctx, member: discord.Member = None, *, date_str: str = None):
-        """Log a birthday. `!birthday set March 5` (yourself) or `!birthday set @user 03/05` (admin)."""
-        # allow "!birthday set March 5" (no member) — shift args
-        if member is None or (date_str is None and member is not None):
-            # if the first token wasn't a member, discord.py leaves member=None and puts all in date_str
-            pass
-        target = member or ctx.author
-        if member and member != ctx.author and not ctx.author.guild_permissions.manage_guild:
-            return await ctx.send("You need **Manage Server** to set someone else's birthday.")
-        if date_str is None:
-            return await ctx.send("Tell me a date, e.g. `!birthday set March 5` or `!birthday set 03/05/1998`.")
+    def _resolve_name(self, ctx, token):
+        """Resolve a name token or mention to a member."""
+        mo = re.fullmatch(r"<@!?(\d+)>", token)
+        if mo:
+            return ctx.guild.get_member(int(mo.group(1)))
+        return ctx.guild.get_member_named(token)
 
-        parsed = parse_birthday(date_str)
-        if not parsed:
-            return await ctx.send("I couldn't read that date. Try `03/05`, `March 5`, or `5 Mar 1998`.")
-        month, day, year = parsed
+    @birthday.command(name="set", aliases=["add", "log"])
+    async def set_birthday(self, ctx, *, text: str = None):
+        """Log birthdays. Yourself: `!birthday set March 5`.
+        Someone else: `!birthday set @user 03/05`.
+        Many at once: `!birthday set vivi oct 5 wreck oct 7 jojo november 20`."""
+        if not text:
+            return await ctx.send("Tell me a date, e.g. `!birthday set March 5`, "
+                                  "or set several: `!birthday set vivi oct 5 wreck nov 20`.")
+        text = text.strip()
+
+        # 1) whole thing is just a date -> you're setting your own
+        whole = parse_birthday(text)
+        if whole:
+            m, d, y = whole
+            g = self._guild(ctx.guild.id)
+            g["birthdays"][str(ctx.author.id)] = {"month": m, "day": d, "year": y}
+            self._save()
+            await self._audit(ctx.guild, f"🎂 {ctx.author.mention} set their birthday to **{fmt_date(m, d, y)}**")
+            when = days_until(m, d, date.today())
+            tail = "today! 🎉" if when == 0 else f"in **{when}** day{'s' if when != 1 else ''}"
+            return await ctx.send(f"Saved your birthday: **{fmt_date(m, d, y)}** — next one is {tail}")
+
+        # 2) otherwise parse name->date pairs (one or many)
+        entries, leftovers = parse_entries(text.split())
+        if not entries:
+            return await ctx.send("I couldn't read that. Try `!birthday set @user March 5` "
+                                  "or `!birthday set vivi oct 5 wreck nov 20`.")
+
+        # resolve members and enforce permission for setting others
+        resolved, unknown = [], list(leftovers)
+        for name, (m, d, y) in entries:
+            member = self._resolve_name(ctx, name)
+            if member is None:
+                unknown.append(name)
+            else:
+                resolved.append((member, m, d, y))
+
+        others = [r for r in resolved if r[0].id != ctx.author.id]
+        if others and not ctx.author.guild_permissions.manage_guild:
+            return await ctx.send("You need **Manage Server** to set other people's birthdays.")
+        if len(resolved) > 50:
+            return await ctx.send("That's a lot at once — keep it to 50 per command.")
 
         g = self._guild(ctx.guild.id)
-        g["birthdays"][str(target.id)] = {"month": month, "day": day, "year": year}
+        saved = []
+        for member, m, d, y in resolved:
+            g["birthdays"][str(member.id)] = {"month": m, "day": d, "year": y}
+            saved.append(f"**{member.display_name}** — {fmt_date(m, d, y)}")
         self._save()
-        await self._audit(ctx.guild, f"🎂 {ctx.author.mention} set {target.mention}'s birthday to **{fmt_date(month, day, year)}**")
 
-        d = days_until(month, day, date.today())
-        when = "today! 🎉" if d == 0 else f"in **{d}** day{'s' if d != 1 else ''}"
-        await ctx.send(f"Saved {target.mention}'s birthday: **{fmt_date(month, day, year)}** — next one is {when}")
+        if saved:
+            await self._audit(ctx.guild, f"🎂 {ctx.author.mention} set {len(saved)} birthday(s): "
+                                         + "; ".join(saved))
+
+        emb = discord.Embed(
+            title=f"🎂 Saved {len(saved)} birthday{'s' if len(saved) != 1 else ''}",
+            description="\n".join(saved) if saved else "Nothing saved.",
+            color=0xe67e22)
+        if unknown:
+            emb.add_field(name="Couldn't find", value=", ".join(f"`{u}`" for u in unknown), inline=False)
+        await ctx.send(embed=emb)
 
     @birthday.command(name="remove", aliases=["delete", "clear", "del"])
     async def remove_birthday(self, ctx, member: discord.Member = None):
