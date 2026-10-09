@@ -30,6 +30,7 @@ async def main():
         await bot.load_extension("cogs.contexto")
         await bot.load_extension("cogs.birthday")
         await bot.load_extension("cogs.jumpscare")
+        await bot.load_extension("cogs.chocobo")
         await bot.start(TOKEN)
       
 @bot.event
