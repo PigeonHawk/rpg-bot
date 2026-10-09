@@ -60,6 +60,9 @@ STATE_PATH = os.getenv("CHOCOBO_STATE_PATH", os.path.join(DATA_DIR, "chocobo.jso
 GROQ_MODEL = os.getenv("CHOCOBO_MODEL", "llama-3.3-70b-versatile")
 LLM_TIMEOUT = 12          # seconds before falling back to built-in lines
 SPAM_GAP = 3              # min seconds between any two commands from one person
+PERFORM_DEADLINE = 30     # hard stop for one whole interaction, so nothing can hang silently
+DELIVER_STEP_DEADLINE = 10  # each way of putting the result on screen gets this long before the next is tried
+BUILD = "r7"              # shown in !chocobo storage and the startup log, to confirm which file is live
 
 # ---------- tuning: needs ----------
 HOUR = 3600
@@ -291,6 +294,22 @@ def allowed_outcomes(taste, food_level):
 
 def _now():
     return time.time()
+
+
+async def with_deadline(coro, timeout):
+    """Await `coro`, but give up after `timeout` seconds EVEN IF it ignores cancellation.
+    (asyncio.wait_for waits for the cancelled call to actually finish, so a misbehaving call can hang forever.)"""
+    task = asyncio.ensure_future(coro)
+    task.add_done_callback(lambda t: t.cancelled() or t.exception())   # silence "never retrieved" warnings
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if task in done:
+        return task.result()
+    task.cancel()
+    raise asyncio.TimeoutError(f"gave up after {timeout}s")
 
 
 def clamp(v, lo=0.0, hi=100.0):
@@ -658,13 +677,15 @@ class FoodSelect(discord.ui.Select):
         view = self.view
         key = self.values[0]
         view.stop()
+        log.warning("Chocobo build %s: food picked (%s) by %s", BUILD, key, view.member.id)
         pet_name = view.cog._guild(view.guild.id)["pet"]["name"]
         # acknowledge right away (the model can take a few seconds), then fill in the result
         await interaction.response.edit_message(
-            embed=view.cog._embed(pet_name, f"You hold out the **{FOODS[key][0]}**…", ""),
+            embed=view.cog._embed(pet_name, f"You hold out the **{FOODS[key][0]}**…", f"build {BUILD}"),
             view=None, attachments=[])
         embed, state = await view.cog._safe_perform(view.guild, view.member, "feed", food=key)
-        await view.cog._deliver(interaction, embed, state)
+        log.warning("Chocobo: feeding decided, delivering")
+        await view.cog._deliver(interaction, embed, state, message=view.message)
 
 
 class FeedView(discord.ui.View):
@@ -739,7 +760,7 @@ class Chocobo(commands.Cog):
             self.data = {"guilds": {}}
             self._load_note = f"file unreadable ({type(e).__name__}); moved to {bad}, starting fresh"
         # warning level on purpose: this bot doesn't configure logging, so info lines never appear in Railway
-        log.warning("Chocobo: save file %s: %s; %s", STATE_PATH, self._load_note, self._summary())
+        log.warning("Chocobo build %s: save file %s: %s; %s", BUILD, STATE_PATH, self._load_note, self._summary())
 
     def _save(self):
         """Write to disk. Returns True on success. Never raises: a failure is recorded and shown to users."""
@@ -813,7 +834,7 @@ class Chocobo(commands.Cog):
             client = self._get_client()
             if client is None:
                 return None
-            resp = await asyncio.wait_for(
+            resp = await with_deadline(
                 client.chat.completions.create(
                     model=GROQ_MODEL,
                     messages=[{"role": "system", "content": SYSTEM_PROMPT},
@@ -838,7 +859,7 @@ class Chocobo(commands.Cog):
             payload = {"chocobo_name": pet["name"],
                        "condition": {"hunger": band(pet["food"], FOOD_BANDS), "mood": mood_label(pet)},
                        "feelings_about_this_person": tier}
-            resp = await asyncio.wait_for(
+            resp = await with_deadline(
                 client.chat.completions.create(
                     model=GROQ_MODEL,
                     messages=[{"role": "system", "content": INTRO_PROMPT},
@@ -1083,7 +1104,7 @@ class Chocobo(commands.Cog):
     async def _safe_perform(self, guild, member, action, **kw):
         """_perform, but an unexpected error becomes a visible message (and a log) instead of silence."""
         try:
-            return await self._perform(guild, member, action, **kw)
+            return await with_deadline(self._perform(guild, member, action, **kw), PERFORM_DEADLINE)
         except Exception as e:
             log.exception("Chocobo: %s failed", action)
             return self._error_embed(self._guild(guild.id)["pet"]["name"], e), None
@@ -1115,23 +1136,28 @@ class Chocobo(commands.Cog):
                         "Does the bot have the Attach Files permission?", e)
         return await ctx.send(embed=self._plain(embed), view=view)
 
-    async def _deliver(self, interaction, embed, state):
-        """Put the result into the feeding message, falling back step by step so something always appears."""
+    async def _deliver(self, interaction, embed, state, message=None):
+        """Put the result into the feeding message. Every step has its own deadline and falls through to the
+        next, so a stalled or refused request can never leave the message stuck."""
         file = self._attach(embed, state)
-        try:
-            return await interaction.edit_original_response(embed=embed, attachments=[file] if file else [])
-        except Exception as e:
-            log.warning("Chocobo: couldn't edit the feeding message (%s: %s); retrying without the picture",
-                        type(e).__name__, e)
         plain = self._plain(embed)
-        try:
-            return await interaction.edit_original_response(embed=plain, attachments=[])
-        except Exception as e:
-            log.warning("Chocobo: edit failed again (%s: %s); sending a new message instead", type(e).__name__, e)
-        try:
-            await interaction.followup.send(embed=plain)
-        except Exception as e:
-            log.error("Chocobo: could not deliver the feeding result at all (%s: %s)", type(e).__name__, e)
+        steps = [
+            ("edit with picture", (lambda: interaction.edit_original_response(embed=embed, attachments=[file]))
+             if file else None),
+            ("edit", lambda: interaction.edit_original_response(embed=plain, attachments=[])),
+            ("edit message directly", (lambda: message.edit(embed=plain, attachments=[])) if message else None),
+            ("new message", lambda: interaction.followup.send(embed=plain)),
+        ]
+        for name, step in steps:
+            if step is None:
+                continue
+            try:
+                await with_deadline(step(), DELIVER_STEP_DEADLINE)
+                log.warning("Chocobo: feeding result delivered (%s)", name)
+                return
+            except Exception as e:
+                log.warning("Chocobo: delivery step '%s' failed (%s: %s)", name, type(e).__name__, e)
+        log.error("Chocobo: could not deliver the feeding result at all")
 
     # ---------- commands ----------
 
@@ -1322,7 +1348,7 @@ class Chocobo(commands.Cog):
             t0 = time.time()
             try:
                 client = self._get_client()
-                resp = await asyncio.wait_for(
+                resp = await with_deadline(
                     client.chat.completions.create(
                         model=GROQ_MODEL, max_tokens=10,
                         messages=[{"role": "user", "content": "Reply with the single word: kweh"}]),
@@ -1365,6 +1391,7 @@ class Chocobo(commands.Cog):
             sprites += " (replies will have no picture)"
         ai = "yes" if os.environ.get("GROQ_API_KEY") else "**no**, so it uses built-in lines only"
         lines = [
+            f"**Build:** `{BUILD}`",
             f"**Saving to:** `{STATE_PATH}`",
             f"**CHOCOBO_STATE_PATH set:** {env}",
             f"**Folder exists / writable:** {os.path.isdir(folder)} / {os.path.isdir(folder) and os.access(folder, os.W_OK)}",
