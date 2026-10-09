@@ -27,6 +27,7 @@ Commands (group: !chocobo, alias !choco):
     !chocobo top             who it likes best
     !chocobo name <name>     (admin) rename it
     !chocobo storage         (admin) where progress is saved, whether saving works, sprites + AI key check
+    !chocobo aitest          (admin) make one real AI call and report exactly what happens
 
 Env vars:
     GROQ_API_KEY            optional — without it the pet still works with built-in lines
@@ -662,13 +663,8 @@ class FoodSelect(discord.ui.Select):
         await interaction.response.edit_message(
             embed=view.cog._embed(pet_name, f"You hold out the **{FOODS[key][0]}**…", ""),
             view=None, attachments=[])
-        embed, state = await view.cog._perform(view.guild, view.member, "feed", food=key)
-        file = view.cog._attach(embed, state)
-        try:
-            await interaction.edit_original_response(embed=embed, attachments=[file] if file else [])
-        except discord.HTTPException:
-            file = view.cog._attach(embed, state)
-            await interaction.followup.send(embed=embed, **({"file": file} if file else {}))
+        embed, state = await view.cog._safe_perform(view.guild, view.member, "feed", food=key)
+        await view.cog._deliver(interaction, embed, state)
 
 
 class FeedView(discord.ui.View):
@@ -684,6 +680,17 @@ class FeedView(discord.ui.View):
                 "That offering isn't yours — use `!chocobo feed` to offer your own!", ephemeral=True)
             return False
         return True
+
+    async def on_error(self, interaction, error, item):
+        log.error("Chocobo: feeding menu error: %s: %s", type(error).__name__, error, exc_info=error)
+        msg = "Something went wrong with that menu. Try `!chocobo feed` again."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
     async def on_timeout(self):
         if self.message:
@@ -802,10 +809,10 @@ class Chocobo(commands.Cog):
         return self._client
 
     async def _ask_llm(self, payload):
-        client = self._get_client()
-        if client is None:
-            return None
         try:
+            client = self._get_client()
+            if client is None:
+                return None
             resp = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=GROQ_MODEL,
@@ -824,10 +831,10 @@ class Chocobo(commands.Cog):
 
     async def _ask_intro(self, pet, tier):
         """A short in-character line shown above the feeding menu. Returns None on any failure."""
-        client = self._get_client()
-        if client is None:
-            return None
         try:
+            client = self._get_client()
+            if client is None:
+                return None
             payload = {"chocobo_name": pet["name"],
                        "condition": {"hunger": band(pet["food"], FOOD_BANDS), "mood": mood_label(pet)},
                        "feelings_about_this_person": tier}
@@ -901,7 +908,7 @@ class Chocobo(commands.Cog):
         if not ctx.guild or await self._spam_blocked(ctx):
             return
         async with ctx.typing():
-            embed, state = await self._perform(ctx.guild, ctx.author, action, **kw)
+            embed, state = await self._safe_perform(ctx.guild, ctx.author, action, **kw)
         await self._send(ctx, embed, state)
 
     async def _perform(self, guild, member, action, food=None, trick=None, said=None):
@@ -1061,13 +1068,70 @@ class Chocobo(commands.Cog):
         embed.set_thumbnail(url=f"attachment://{stem}.png")
         return discord.File(os.path.join(SPRITE_DIR, stem + ".png"), filename=f"{stem}.png")
 
+    def _plain(self, embed):
+        """A copy of the embed without the sprite thumbnail (used when the picture can't be uploaded)."""
+        d = embed.to_dict()
+        d.pop("thumbnail", None)
+        return discord.Embed.from_dict(d)
+
+    def _error_embed(self, name, exc):
+        e = discord.Embed(title=f"🐤 {name}", color=0xE74C3C,
+                          description="Something went wrong while it was deciding. Try again in a moment.")
+        e.add_field(name="Details", value=f"`{type(exc).__name__}: {str(exc)[:150]}`", inline=False)
+        return e
+
+    async def _safe_perform(self, guild, member, action, **kw):
+        """_perform, but an unexpected error becomes a visible message (and a log) instead of silence."""
+        try:
+            return await self._perform(guild, member, action, **kw)
+        except Exception as e:
+            log.exception("Chocobo: %s failed", action)
+            return self._error_embed(self._guild(guild.id)["pet"]["name"], e), None
+
     async def _send(self, ctx, embed, state="general"):
         file = self._attach(embed, state)
-        kw = {"file": file} if file else {}
+        mentions = discord.AllowedMentions.none()
         try:
-            await ctx.send(embed=embed, allowed_mentions=discord.AllowedMentions.none(), **kw)
+            await ctx.send(embed=embed, allowed_mentions=mentions, **({"file": file} if file else {}))
+            return
         except discord.HTTPException as e:
-            log.warning("Chocobo: send failed: %s", e)
+            log.warning("Chocobo: send failed (%s)%s", e,
+                        "; retrying without the picture. Does the bot have the Attach Files permission?" if file else "")
+            if not file:
+                return
+        try:
+            await ctx.send(embed=self._plain(embed), allowed_mentions=mentions)
+        except discord.HTTPException as e:
+            log.warning("Chocobo: send failed again: %s", e)
+
+    async def _send_menu(self, ctx, embed, view):
+        file = self._attach(embed, "general")
+        try:
+            return await ctx.send(embed=embed, view=view, **({"file": file} if file else {}))
+        except discord.HTTPException as e:
+            if not file:
+                raise
+            log.warning("Chocobo: couldn't send the menu with a picture (%s); retrying without it. "
+                        "Does the bot have the Attach Files permission?", e)
+        return await ctx.send(embed=self._plain(embed), view=view)
+
+    async def _deliver(self, interaction, embed, state):
+        """Put the result into the feeding message, falling back step by step so something always appears."""
+        file = self._attach(embed, state)
+        try:
+            return await interaction.edit_original_response(embed=embed, attachments=[file] if file else [])
+        except Exception as e:
+            log.warning("Chocobo: couldn't edit the feeding message (%s: %s); retrying without the picture",
+                        type(e).__name__, e)
+        plain = self._plain(embed)
+        try:
+            return await interaction.edit_original_response(embed=plain, attachments=[])
+        except Exception as e:
+            log.warning("Chocobo: edit failed again (%s: %s); sending a new message instead", type(e).__name__, e)
+        try:
+            await interaction.followup.send(embed=plain)
+        except Exception as e:
+            log.error("Chocobo: could not deliver the feeding result at all (%s: %s)", type(e).__name__, e)
 
     # ---------- commands ----------
 
@@ -1120,16 +1184,14 @@ class Chocobo(commands.Cog):
             self._save()
         async with ctx.typing():
             if constraint:   # too full — no menu, it just turns you down
-                embed, state = await self._perform(ctx.guild, ctx.author, "feed")
+                embed, state = await self._safe_perform(ctx.guild, ctx.author, "feed")
                 return await self._send(ctx, embed, state)
             intro = await self._ask_intro(pet, tier)
         intro = intro or random.choice(INTRO_FALLBACK).format(p=pet["name"])
         view = FeedView(self, ctx.guild, ctx.author, pick_menu())
         embed = self._embed(pet["name"], f"{intro}\n\n**What do you offer?**",
                             f"{ctx.author.display_name}, choose from the menu · 60s")
-        file = self._attach(embed, "general")
-        kw = {"file": file} if file else {}
-        view.message = await ctx.send(embed=embed, view=view, **kw)
+        view.message = await self._send_menu(ctx, embed, view)
 
     @chocobo.command(name="foods", aliases=["diary", "tastes"])
     async def foods(self, ctx):
@@ -1247,6 +1309,29 @@ class Chocobo(commands.Cog):
             name = m.display_name if m else u.get("name", "Someone")
             lines.append(f"**{i}.** {name} — {tier_for(u['affection'])} ({u['affection']:+d})")
         await self._send(ctx, discord.Embed(title="💛 Favorite people", description="\n".join(lines), color=COLOR))
+
+    @chocobo.command(name="aitest")
+    @commands.has_guild_permissions(manage_guild=True)
+    async def aitest(self, ctx):
+        """(Admin) Make one real call to the AI and report exactly what happens."""
+        if not os.environ.get("GROQ_API_KEY"):
+            return await ctx.send("No `GROQ_API_KEY` is set, so only the built-in lines are used.")
+        if AsyncGroq is None:
+            return await ctx.send("The `groq` package isn't installed. Add `groq` to requirements.txt.")
+        async with ctx.typing():
+            t0 = time.time()
+            try:
+                client = self._get_client()
+                resp = await asyncio.wait_for(
+                    client.chat.completions.create(
+                        model=GROQ_MODEL, max_tokens=10,
+                        messages=[{"role": "user", "content": "Reply with the single word: kweh"}]),
+                    timeout=LLM_TIMEOUT)
+                text = (resp.choices[0].message.content or "").strip()[:60]
+                msg = f"✅ The AI answered in {time.time() - t0:.1f}s: `{text}` (model `{GROQ_MODEL}`)"
+            except Exception as e:
+                msg = f"❌ `{type(e).__name__}`: {str(e)[:300]} (model `{GROQ_MODEL}`)"
+        await ctx.send(msg)
 
     @chocobo.command(name="storage", aliases=["debug"])
     @commands.has_guild_permissions(manage_guild=True)
