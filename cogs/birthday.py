@@ -16,6 +16,7 @@ Commands (group: !birthday, alias !bday):
   !birthday role @role        (admin) optional role to ping in announcements
   !birthday logchannel #chan  (admin) optional audit log channel (set to #none to clear)
   !birthday test              (admin) post today's announcements now, for testing
+  !birthday storage           (admin) show where birthdays are saved and whether saving works
 
 Persistence (point at your Railway volume to survive redeploys):
   BIRTHDAY_STATE_PATH   default: data/birthdays.json
@@ -93,8 +94,8 @@ def parse_entries(tokens):
         # strip list punctuation (bullets, dashes, commas, numbering) from the name token
         name = tokens[i].strip(" \t\r\n.,;:!?*•·()[]-\u2013\u2014")
         i += 1
-        if not name:
-            continue  # pure punctuation / bullet marker — skip silently
+        if not name or name.isdigit():
+            continue  # bullet marker or list number — skip silently
         parsed, consumed = None, 0
         for length in (3, 2, 1):
             if i + length <= len(tokens):
@@ -142,6 +143,10 @@ def age_on(month: int, day: int, year, on: date):
     return age
 
 
+UNSAVED_WARNING = ("\n⚠️ I couldn't write that to disk, so it will be lost on the next restart. "
+                   "Run `!birthday storage` to see why.")
+
+
 class Birthday(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -154,20 +159,49 @@ class Birthday(commands.Cog):
 
     # ---------- persistence ----------
 
+    def _count(self):
+        return sum(len(g.get("birthdays", {})) for g in self.data.get("guilds", {}).values())
+
     def _load(self):
+        self._last_save_error = None
+        self._last_save_at = None
         try:
             with open(STATE_PATH) as f:
                 self.data = json.load(f)
             self.data.setdefault("guilds", {})
-        except (FileNotFoundError, json.JSONDecodeError):
+            self._load_note = "loaded OK"
+        except FileNotFoundError:
             self.data = {"guilds": {}}
+            self._load_note = "no file found, starting empty"
+        except (ValueError, OSError) as e:
+            # keep the unreadable file instead of silently overwriting it with an empty list
+            bad = f"{STATE_PATH}.corrupt-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
+            try:
+                os.replace(STATE_PATH, bad)
+            except OSError:
+                bad = "(could not move it aside)"
+            self.data = {"guilds": {}}
+            self._load_note = f"file unreadable ({type(e).__name__}); moved to {bad}, starting empty"
+        # warning level on purpose: this bot doesn't configure logging, so info lines never appear in Railway
+        log.warning("Birthday: save file %s: %s; %d birthday(s) loaded", STATE_PATH, self._load_note, self._count())
 
     def _save(self):
-        os.makedirs(os.path.dirname(STATE_PATH) or ".", exist_ok=True)
-        tmp = STATE_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(self.data, f)
-        os.replace(tmp, STATE_PATH)
+        """Write to disk. Returns True on success. Never raises: a failure is recorded and shown to the user."""
+        try:
+            os.makedirs(os.path.dirname(STATE_PATH) or ".", exist_ok=True)
+            tmp = STATE_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self.data, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, STATE_PATH)
+        except Exception as e:
+            self._last_save_error = f"{type(e).__name__}: {e}"
+            log.error("Birthday: COULD NOT SAVE to %s: %s", STATE_PATH, self._last_save_error)
+            return False
+        self._last_save_error = None
+        self._last_save_at = datetime.now(timezone.utc)
+        return True
 
     def _guild(self, gid):
         g = self.data["guilds"].setdefault(str(gid), {})
@@ -222,11 +256,12 @@ class Birthday(commands.Cog):
             m, d, y = whole
             g = self._guild(ctx.guild.id)
             g["birthdays"][str(ctx.author.id)] = {"month": m, "day": d, "year": y}
-            self._save()
+            ok = self._save()
             await self._audit(ctx.guild, f"🎂 {ctx.author.mention} set their birthday to **{fmt_date(m, d, y)}**")
             when = days_until(m, d, date.today())
             tail = "today! 🎉" if when == 0 else f"in **{when}** day{'s' if when != 1 else ''}"
-            return await ctx.send(f"Saved your birthday: **{fmt_date(m, d, y)}** — next one is {tail}")
+            return await ctx.send(f"Saved your birthday: **{fmt_date(m, d, y)}** — next one is {tail}"
+                                  + ("" if ok else UNSAVED_WARNING))
 
         # 2) otherwise parse name->date pairs (one or many)
         entries, leftovers = parse_entries(text.split())
@@ -254,7 +289,7 @@ class Birthday(commands.Cog):
         for member, m, d, y in resolved:
             g["birthdays"][str(member.id)] = {"month": m, "day": d, "year": y}
             saved.append(f"**{member.display_name}** — {fmt_date(m, d, y)}")
-        self._save()
+        ok = self._save()
 
         if saved:
             await self._audit(ctx.guild, f"🎂 {ctx.author.mention} set {len(saved)} birthday(s): "
@@ -266,6 +301,8 @@ class Birthday(commands.Cog):
             color=0xe67e22)
         if unknown:
             emb.add_field(name="Couldn't find", value=", ".join(f"`{u}`" for u in unknown), inline=False)
+        if not ok:
+            emb.add_field(name="⚠️ Not saved to disk", value=UNSAVED_WARNING.strip(), inline=False)
         await ctx.send(embed=emb)
 
     @birthday.command(name="remove", aliases=["delete", "clear", "del"])
@@ -278,10 +315,10 @@ class Birthday(commands.Cog):
         if str(target.id) not in g["birthdays"]:
             return await ctx.send(f"No birthday on file for {target.mention}.")
         removed = g["birthdays"].pop(str(target.id))
-        self._save()
+        ok = self._save()
         await self._audit(ctx.guild, f"🗑️ {ctx.author.mention} removed {target.mention}'s birthday "
                                      f"(was {fmt_date(removed['month'], removed['day'], removed.get('year'))})")
-        await ctx.send(f"Deleted {target.mention}'s birthday.")
+        await ctx.send(f"Deleted {target.mention}'s birthday." + ("" if ok else UNSAVED_WARNING))
 
     @birthday.command(name="view", aliases=["show", "get"])
     async def view_birthday(self, ctx, member: discord.Member = None):
@@ -367,6 +404,41 @@ class Birthday(commands.Cog):
         g["log_channel"] = channel.id if channel else None
         self._save()
         await ctx.send(f"Audit log will post in {channel.mention}." if channel else "Audit log cleared.")
+
+    @birthday.command(name="storage", aliases=["debug", "where"])
+    @commands.has_guild_permissions(manage_guild=True)
+    async def storage_info(self, ctx):
+        """(Admin) Show where birthdays are saved and whether saving is working."""
+        folder = os.path.dirname(STATE_PATH) or "."
+        try:
+            st = os.stat(STATE_PATH)
+            when = datetime.fromtimestamp(st.st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            on_disk = f"yes ({st.st_size} bytes, last changed {when})"
+        except FileNotFoundError:
+            on_disk = "**no**, the file doesn't exist"
+        except OSError as e:
+            on_disk = f"couldn't check ({e})"
+        if os.getenv("BIRTHDAY_STATE_PATH"):
+            env = "yes"
+        else:
+            env = "**no**, using the default folder inside the app, which Railway wipes on every redeploy"
+        if self._last_save_error:
+            last = f"❌ failed: `{self._last_save_error}`"
+        elif self._last_save_at:
+            last = f"✅ {self._last_save_at:%Y-%m-%d %H:%M UTC}"
+        else:
+            last = "nothing saved since the bot started"
+        g = self._guild(ctx.guild.id)
+        lines = [
+            f"**Saving to:** `{STATE_PATH}`",
+            f"**BIRTHDAY_STATE_PATH set:** {env}",
+            f"**Folder exists / writable:** {os.path.isdir(folder)} / {os.path.isdir(folder) and os.access(folder, os.W_OK)}",
+            f"**File on disk:** {on_disk}",
+            f"**At startup:** {self._load_note}",
+            f"**Birthdays in memory:** {len(g['birthdays'])} in this server ({self._count()} total)",
+            f"**Last save:** {last}",
+        ]
+        await ctx.send(embed=discord.Embed(title="🎂 Birthday storage", description="\n".join(lines), color=0x95a5a6))
 
     @birthday.command(name="test")
     @commands.has_guild_permissions(manage_guild=True)

@@ -26,6 +26,7 @@ Commands (group: !chocobo, alias !choco):
     !chocobo bond [@user]    affection tier + what you've done together
     !chocobo top             who it likes best
     !chocobo name <name>     (admin) rename it
+    !chocobo storage         (admin) where progress is saved, whether saving works, sprites + AI key check
 
 Env vars:
     GROQ_API_KEY            optional — without it the pet still works with built-in lines
@@ -167,6 +168,8 @@ def overdo_level(user, action, now):
 
 
 COLOR = 0xF1C40F
+UNSAVED_NOTE = ("I couldn't write progress to disk, so it will be lost on the next restart. "
+                "Admins: run `!chocobo storage` to see why.")
 
 # ---------- sprites ----------
 # Each state maps to one or more PNGs in SPRITE_DIR (file name without .png). When a state has several,
@@ -704,20 +707,50 @@ class Chocobo(commands.Cog):
 
     # ---------- persistence ----------
 
+    def _summary(self):
+        guilds = self.data.get("guilds", {})
+        return f"{len(guilds)} server(s), {sum(len(g.get('users', {})) for g in guilds.values())} bonded person/people"
+
     def _load(self):
+        self._last_save_error = None
+        self._last_save_at = None
         try:
             with open(STATE_PATH) as f:
                 self.data = json.load(f)
             self.data.setdefault("guilds", {})
-        except (FileNotFoundError, json.JSONDecodeError):
+            self._load_note = "loaded OK"
+        except FileNotFoundError:
             self.data = {"guilds": {}}
+            self._load_note = "no file found, starting fresh"
+        except (ValueError, OSError) as e:
+            # keep the unreadable file instead of silently overwriting it with an empty one
+            bad = f"{STATE_PATH}.corrupt-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+            try:
+                os.replace(STATE_PATH, bad)
+            except OSError:
+                bad = "(could not move it aside)"
+            self.data = {"guilds": {}}
+            self._load_note = f"file unreadable ({type(e).__name__}); moved to {bad}, starting fresh"
+        # warning level on purpose: this bot doesn't configure logging, so info lines never appear in Railway
+        log.warning("Chocobo: save file %s: %s; %s", STATE_PATH, self._load_note, self._summary())
 
     def _save(self):
-        os.makedirs(os.path.dirname(STATE_PATH) or ".", exist_ok=True)
-        tmp = STATE_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(self.data, f)
-        os.replace(tmp, STATE_PATH)
+        """Write to disk. Returns True on success. Never raises: a failure is recorded and shown to users."""
+        try:
+            os.makedirs(os.path.dirname(STATE_PATH) or ".", exist_ok=True)
+            tmp = STATE_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self.data, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, STATE_PATH)
+        except Exception as e:
+            self._last_save_error = f"{type(e).__name__}: {e}"
+            log.error("Chocobo: COULD NOT SAVE to %s: %s", STATE_PATH, self._last_save_error)
+            return False
+        self._last_save_error = None
+        self._last_save_at = time.time()
+        return True
 
     def _guild(self, gid):
         g = self.data["guilds"].setdefault(str(gid), {})
@@ -983,7 +1016,7 @@ class Chocobo(commands.Cog):
             label = "annoyed" if over == "annoyed" else outcome
             g["recent"].append(f"{clean_name(member.display_name, 16)} {what} ({label})")
             g["recent"] = g["recent"][-8:]
-            self._save()
+            saved = self._save()
 
         sign = f"{delta:+d}" if delta else "±0"
         footer = f"{member.display_name} · bond: {new_tier} ({sign})"
@@ -998,7 +1031,10 @@ class Chocobo(commands.Cog):
         elif TIER_ORDER.index(new_tier) < TIER_ORDER.index(old_tier):
             footer += " · 💔 it's growing distant"
         state = pick_sprite(action, outcome, over, taste, pet, new_tier, now)
-        return self._embed(pet["name"], msg, footer), state
+        emb = self._embed(pet["name"], msg, footer)
+        if not saved:
+            emb.add_field(name="⚠️ Not saved", value=UNSAVED_NOTE, inline=False)
+        return emb, state
 
     def _cooldown_embed(self, action, tier, left, pet_name, annoyed, who):
         t, noun = fmt_wait(left), COOLDOWN_NOUN[action]
@@ -1212,6 +1248,51 @@ class Chocobo(commands.Cog):
             lines.append(f"**{i}.** {name} — {tier_for(u['affection'])} ({u['affection']:+d})")
         await self._send(ctx, discord.Embed(title="💛 Favorite people", description="\n".join(lines), color=COLOR))
 
+    @chocobo.command(name="storage", aliases=["debug"])
+    @commands.has_guild_permissions(manage_guild=True)
+    async def storage_info(self, ctx):
+        """(Admin) Where progress is saved, whether saving works, and whether sprites / the AI key are set up."""
+        folder = os.path.dirname(STATE_PATH) or "."
+        try:
+            st = os.stat(STATE_PATH)
+            when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(st.st_mtime))
+            on_disk = f"yes ({st.st_size} bytes, last changed {when})"
+        except FileNotFoundError:
+            on_disk = "**no**, the file doesn't exist"
+        except OSError as e:
+            on_disk = f"couldn't check ({e})"
+        if os.getenv("CHOCOBO_STATE_PATH"):
+            env = "yes"
+        else:
+            env = "**no**, using the default folder inside the app, which Railway wipes on every redeploy"
+        if self._last_save_error:
+            last = f"❌ failed: `{self._last_save_error}`"
+        elif self._last_save_at:
+            last = "✅ " + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(self._last_save_at))
+        else:
+            last = "nothing saved since the bot started"
+        g = self._guild(ctx.guild.id)
+        learned = sum(1 for t in g["tricks"].values() if t.get("progress", 0) >= 100)
+        wanted = sorted({f for v in SPRITES.values() for f in v})
+        have = [f for f in wanted if os.path.isfile(os.path.join(SPRITE_DIR, f + ".png"))]
+        sprites = f"{len(have)} of {len(wanted)} found in `{SPRITE_DIR}`"
+        if not have:
+            sprites += " (replies will have no picture)"
+        ai = "yes" if os.environ.get("GROQ_API_KEY") else "**no**, so it uses built-in lines only"
+        lines = [
+            f"**Saving to:** `{STATE_PATH}`",
+            f"**CHOCOBO_STATE_PATH set:** {env}",
+            f"**Folder exists / writable:** {os.path.isdir(folder)} / {os.path.isdir(folder) and os.access(folder, os.W_OK)}",
+            f"**File on disk:** {on_disk}",
+            f"**At startup:** {self._load_note}",
+            f"**This server:** {len(g['users'])} bonded, {learned} trick(s) learned, {len(g['diary'])} food(s) discovered",
+            f"**Last save:** {last}",
+            f"**Sprites:** {sprites}",
+            f"**Groq key set:** {ai} (model `{GROQ_MODEL}`)",
+        ]
+        await self._send(ctx, discord.Embed(title="🐤 Chocobo storage & setup", description="\n".join(lines),
+                                            color=COLOR), "general")
+
     @chocobo.command(name="name", aliases=["rename"])
     @commands.has_guild_permissions(manage_guild=True)
     async def rename(self, ctx, *, new_name: str):
@@ -1219,8 +1300,9 @@ class Chocobo(commands.Cog):
         new_name = clean_name(new_name)
         g = self._guild(ctx.guild.id)
         g["pet"]["name"] = new_name
-        self._save()
-        await ctx.send(f"The chocobo is now called **{new_name}**!", allowed_mentions=discord.AllowedMentions.none())
+        ok = self._save()
+        await ctx.send(f"The chocobo is now called **{new_name}**!" + (f"\n⚠️ {UNSAVED_NOTE}" if not ok else ""),
+                       allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot):
