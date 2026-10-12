@@ -1,5 +1,5 @@
 """
-poop.py — a tiny cog: `!poop` in #bowel-updates pings one specific person.
+poop.py — a tiny cog: `!poop` pings one specific person.
 
     !poop                  posts "💩 @them I wanted to let you know that <you> has pooped."
     !poop it was a big one same, with your note added underneath as a quote
@@ -22,8 +22,8 @@ If that's off, use `!poopset @user` once instead, which doesn't need it.
 Env vars (all optional)
     POOP_TARGETS       names to look for, comma separated. default: idkk_9,vivi
     POOP_USER_ID       pin the target by Discord user ID
-    POOP_CHANNEL       channel name where !poop works. default: bowel-updates
-    POOP_CHANNEL_ID    ...or the channel's ID, if you'd rather
+    POOP_CHANNEL       limit !poop to one channel by name, e.g. bowel-updates. default: none (works anywhere)
+    POOP_CHANNEL_ID    ...or limit it by the channel's ID
     POOP_STATE_PATH    where the pin from !poopset is saved. default: data/poop.json (point at your Railway volume)
 """
 
@@ -38,7 +38,7 @@ from discord.ext import commands
 log = logging.getLogger(__name__)
 
 TARGETS = [t.strip() for t in os.getenv("POOP_TARGETS", "idkk_9,vivi").split(",") if t.strip()]
-CHANNEL_NAME = os.getenv("POOP_CHANNEL", "bowel-updates").strip().lstrip("#").lower()
+CHANNEL_NAME = os.getenv("POOP_CHANNEL", "").strip().lstrip("#").lower()
 CHANNEL_ID = int(os.getenv("POOP_CHANNEL_ID") or 0)
 ENV_PIN = int(os.getenv("POOP_USER_ID") or 0)
 DATA_DIR = os.getenv("POOP_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
@@ -74,8 +74,8 @@ class Poop(commands.Cog):
         self._last = {}          # author id -> time of their last !poop
         self._save_error = None
         self._load()
-        log.warning("Poop: channel '%s', looking for %s, pinned user: %s",
-                    CHANNEL_ID or CHANNEL_NAME, TARGETS, self.pin or "none (finds by name)")
+        log.warning("Poop: channel limit: %s, looking for %s, pinned user: %s",
+                    CHANNEL_ID or CHANNEL_NAME or "none (any channel)", TARGETS, self.pin or "none (finds by name)")
 
     # ---------- saved pin ----------
 
@@ -130,8 +130,11 @@ class Poop(commands.Cog):
         return member.id, f"matched by {label}"
 
     def _right_channel(self, channel):
-        return (CHANNEL_ID and channel.id == CHANNEL_ID) or (not CHANNEL_ID and
-                                                              getattr(channel, "name", "").lower() == CHANNEL_NAME)
+        if CHANNEL_ID:
+            return channel.id == CHANNEL_ID
+        if CHANNEL_NAME:
+            return getattr(channel, "name", "").lower() == CHANNEL_NAME
+        return True                      # no restriction set: works in any channel
 
     # ---------- commands ----------
 
@@ -151,7 +154,7 @@ class Poop(commands.Cog):
         uid, _ = await self._resolve(ctx.guild)
         if uid is None:
             return await ctx.send(f"I couldn't find {' or '.join(TARGETS)} in this server. "
-                                  "An admin can fix it with `!poopset @user`.", delete_after=15)
+                                  "An admin can fix it with `!poopset @user`.")
         self._last[ctx.author.id] = time.time()
         text = f"💩 <@{uid}> I wanted to let you know that **{tidy(ctx.author.display_name, 40)}** has pooped."
         if note and tidy(note, NOTE_MAX):
