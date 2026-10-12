@@ -31,6 +31,7 @@ async def main():
         await bot.load_extension("cogs.birthday")
         await bot.load_extension("cogs.jumpscare")
         await bot.load_extension("cogs.chocobo")
+        await bot.load_extension("cogs.poop")
         await bot.start(TOKEN)
       
 @bot.event
