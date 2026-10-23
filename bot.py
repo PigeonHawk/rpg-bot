@@ -33,6 +33,7 @@ async def main():
         await bot.load_extension("cogs.chocobo")
         await bot.load_extension("cogs.poop")
         await bot.load_extension("cogs.gif")
+        await bot.load_extension("cogs.calm")
         await bot.start(TOKEN)
       
 @bot.event
