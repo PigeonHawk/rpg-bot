@@ -9,3 +9,4 @@ discord.py[voice]>=2.6
 yt-dlp[default]
 deno
 discord.py[voice]>=2.7.1
+bgutil-ytdlp-pot-provider
