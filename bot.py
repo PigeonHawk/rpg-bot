@@ -34,6 +34,7 @@ async def main():
         await bot.load_extension("cogs.poop")
         await bot.load_extension("cogs.gif")
         await bot.load_extension("cogs.calm")
+        await bot.load_extension("cogs.music")
         await bot.start(TOKEN)
       
 @bot.event
