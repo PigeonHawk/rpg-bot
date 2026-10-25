@@ -41,9 +41,16 @@ YTDL_OPTS = {
 }
 # Optional: YouTube often blocks datacenter IPs (like Railway). Exporting
 # browser cookies to a file and pointing this env var at it usually helps.
-if os.getenv("YTDL_COOKIES"):
-    YTDL_OPTS["cookiefile"] = os.getenv("YTDL_COOKIES")
+import base64
 
+_cookie_b64 = os.getenv("YTDL_COOKIES_B64")
+if _cookie_b64:
+    _cookie_path = "/tmp/yt_cookies.txt"
+    with open(_cookie_path, "wb") as f:
+        f.write(base64.b64decode(_cookie_b64))
+    YTDL_OPTS["cookiefile"] = _cookie_path
+elif os.getenv("YTDL_COOKIES"):
+    YTDL_OPTS["cookiefile"] = os.getenv("YTDL_COOKIES")
 FFMPEG_OPTS = {
     # reconnect flags stop streams from dying halfway through long songs
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
