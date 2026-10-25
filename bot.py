@@ -19,6 +19,7 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 
 # ── Load cogs ─────────────────────────────────────────────────────────────────
 async def main():
+    discord.utils.setup_logging()
     async with bot:
         await bot.load_extension("cogs.tt")
         await bot.load_extension("cogs.hamtaro")
