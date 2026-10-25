@@ -15,6 +15,7 @@ Optional env vars:
 Commands (prefix):
     !join                   — join your voice channel
     !play <url or search>   (!p)
+    !repeat (!loop)         — repeat current song until !skip
     !skip (!s), !pause, !resume, !queue (!q), !np, !volume <0-100> (!vol)
     !remove <position>, !clear, !stop, !leave (!dc)
 """
@@ -44,13 +45,15 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 YTDL_OPTS = {
     "format": "bestaudio/best",
     "noplaylist": True,
-    "quiet": False,
-    "no_warnings": False,
-    "verbose": True,
+    "quiet": True,
+    "no_warnings": True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
     # PO token provider (bgutil service on Railway) — gets past YouTube's bot check
     "extractor_args": {
+        "youtube": {
+            "player_client": ["mweb", "android_vr", "web_safari"]
+        },
         "youtubepot-bgutilhttp": {
             "base_url": [os.getenv("POT_PROVIDER_URL", "http://bgutil.railway.internal:4416")]
         }
@@ -140,6 +143,8 @@ class GuildPlayer:
         self.queue: deque[Track] = deque()
         self.current: Track | None = None
         self.volume = 0.5
+        self.repeat = False          # repeat current song until !skip
+        self.skip_requested = False
         self.next_event = asyncio.Event()
         self.task = bot.loop.create_task(self.player_loop())
 
@@ -165,30 +170,41 @@ class GuildPlayer:
                 await self.text_channel.send(f"⚠️ Couldn't play **{track.title}**: `{e}`")
                 continue
 
-            source = discord.PCMVolumeTransformer(
-                discord.FFmpegPCMAudio(path, options="-vn"), volume=self.volume
-            )
-
             def after(err):
                 if err:
                     print(f"[music] playback error: {err}")
                 self.bot.loop.call_soon_threadsafe(self.next_event.set)
 
             self.current = track
+            self.skip_requested = False
+            announced = False
             try:
-                vc.play(source, after=after)
-            except Exception as e:
-                _delete(path)
-                self.current = None
-                await self.text_channel.send(f"⚠️ Playback failed: `{e}`")
-                continue
+                while True:
+                    self.next_event.clear()
+                    vc = self.guild.voice_client
+                    if not vc or not vc.is_connected():
+                        break
+                    source = discord.PCMVolumeTransformer(
+                        discord.FFmpegPCMAudio(path, options="-vn"), volume=self.volume
+                    )
+                    try:
+                        vc.play(source, after=after)
+                    except Exception as e:
+                        await self.text_channel.send(f"⚠️ Playback failed: `{e}`")
+                        break
 
-            await self.text_channel.send(
-                f"🎶 Now playing **{track.title}** `[{track.pretty_duration}]` — requested by {track.requester.display_name}"
-            )
+                    if not announced:
+                        loop_note = " 🔂" if self.repeat else ""
+                        await self.text_channel.send(
+                            f"🎶 Now playing **{track.title}** `[{track.pretty_duration}]` — requested by {track.requester.display_name}{loop_note}"
+                        )
+                        announced = True
 
-            try:
-                await self.next_event.wait()
+                    await self.next_event.wait()
+
+                    # replay the same file if repeat is on and nobody skipped
+                    if not self.repeat or self.skip_requested:
+                        break
             finally:
                 self.current = None
                 _delete(path)
@@ -283,11 +299,32 @@ class Music(commands.Cog):
         if not await self.ensure_same_channel(ctx):
             return
         vc = ctx.voice_client
+        player = self.players.get(ctx.guild.id)
         if vc and (vc.is_playing() or vc.is_paused()):
+            was_repeating = bool(player and player.repeat)
+            if player:
+                player.skip_requested = True
+                player.repeat = False
             vc.stop()
-            await ctx.message.add_reaction("⏭️")
+            if was_repeating:
+                await ctx.send("⏭️ Skipped — repeat is now off.")
+            else:
+                await ctx.message.add_reaction("⏭️")
         else:
             await ctx.send("Nothing's playing.")
+
+    @commands.command(aliases=["loop"])
+    async def repeat(self, ctx: commands.Context):
+        if not await self.ensure_same_channel(ctx):
+            return
+        player = self.players.get(ctx.guild.id)
+        if not player or not player.current:
+            return await ctx.send("Nothing's playing.")
+        player.repeat = not player.repeat
+        if player.repeat:
+            await ctx.send(f"🔂 Repeating **{player.current.title}** until someone uses `!skip`.")
+        else:
+            await ctx.send("➡️ Repeat off — the queue will continue after this song.")
 
     @commands.command()
     async def pause(self, ctx: commands.Context):
@@ -313,7 +350,8 @@ class Music(commands.Cog):
 
         lines = []
         if player.current:
-            lines.append(f"**Now:** {player.current.title} `[{player.current.pretty_duration}]`")
+            loop_note = " 🔂" if player.repeat else ""
+            lines.append(f"**Now:** {player.current.title} `[{player.current.pretty_duration}]`{loop_note}")
         for i, t in enumerate(list(player.queue)[:10], start=1):
             lines.append(f"`{i}.` {t.title} `[{t.pretty_duration}]` — {t.requester.display_name}")
         if len(player.queue) > 10:
@@ -328,7 +366,8 @@ class Music(commands.Cog):
         if not player or not player.current:
             return await ctx.send("Nothing's playing.")
         t = player.current
-        await ctx.send(f"🎶 **{t.title}** `[{t.pretty_duration}]`\n<{t.webpage_url}>")
+        loop_note = " 🔂 (repeating)" if player.repeat else ""
+        await ctx.send(f"🎶 **{t.title}** `[{t.pretty_duration}]`{loop_note}\n<{t.webpage_url}>")
 
     @commands.command(aliases=["vol"])
     async def volume(self, ctx: commands.Context, vol: int):
@@ -365,6 +404,8 @@ class Music(commands.Cog):
         player = self.players.get(ctx.guild.id)
         if player:
             player.queue.clear()
+            player.repeat = False
+            player.skip_requested = True
         if ctx.voice_client:
             ctx.voice_client.stop()
         await ctx.message.add_reaction("⏹️")
