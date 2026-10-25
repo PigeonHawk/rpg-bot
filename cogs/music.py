@@ -1,26 +1,29 @@
 """
-Music cog — streams audio from YouTube into a voice channel.
+Music cog — plays audio from YouTube in a voice channel.
+
+Downloads each song's audio to a temp file with yt-dlp, then plays the file.
+(Streaming the URL straight into FFmpeg gets 403 Forbidden from YouTube.)
 
 Requirements:
-    pip install -U "discord.py[voice]" yt-dlp
-    + ffmpeg on the system PATH
-    + a JS runtime (deno) for yt-dlp's YouTube extraction
+    discord.py[voice]>=2.7.1, yt-dlp[default], deno  (requirements.txt)
+    ffmpeg on the system (Railway: RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg)
+
+Optional env vars:
+    YTDL_COOKIES_B64  — base64 of a cookies.txt (fixes "Sign in to confirm you're not a bot")
+    YTDL_COOKIES      — path to a cookies.txt file instead
 
 Commands (prefix):
-    !play <url or search>   — queue a song (joins your channel)
-    !skip                   — skip current song
-    !pause / !resume
-    !queue                  — show upcoming songs
-    !np                     — now playing
-    !volume <0-100>
-    !remove <position>      — remove a song from the queue
-    !clear                  — clear the queue (keeps current song)
-    !stop                   — stop and clear everything
-    !leave                  — disconnect
+    !play <url or search>   (!p)
+    !skip (!s), !pause, !resume, !queue (!q), !np, !volume <0-100> (!vol)
+    !remove <position>, !clear, !stop, !leave (!dc)
 """
 
 import asyncio
+import base64
 import os
+import shutil
+import tempfile
+import traceback
 from collections import deque
 from dataclasses import dataclass
 
@@ -28,8 +31,14 @@ import discord
 import yt_dlp
 from discord.ext import commands
 
-IDLE_TIMEOUT = 300  # seconds before leaving an empty/idle channel
+IDLE_TIMEOUT = 300          # seconds idle before leaving voice
 MAX_QUEUE = 100
+MAX_DURATION = 3 * 60 * 60  # refuse anything longer than 3 hours
+
+DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "music_cache")
+# wipe leftovers from a previous run
+shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 YTDL_OPTS = {
     "format": "bestaudio/best",
@@ -39,25 +48,25 @@ YTDL_OPTS = {
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
 }
-# Optional: YouTube often blocks datacenter IPs (like Railway). Exporting
-# browser cookies to a file and pointing this env var at it usually helps.
-import base64
 
+# ---- cookies (needed on Railway/datacenter IPs) ----
 _cookie_b64 = os.getenv("YTDL_COOKIES_B64")
 if _cookie_b64:
-    _cookie_path = "/tmp/yt_cookies.txt"
+    _cookie_path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
     with open(_cookie_path, "wb") as f:
         f.write(base64.b64decode(_cookie_b64))
     YTDL_OPTS["cookiefile"] = _cookie_path
 elif os.getenv("YTDL_COOKIES"):
     YTDL_OPTS["cookiefile"] = os.getenv("YTDL_COOKIES")
-FFMPEG_OPTS = {
-    # reconnect flags stop streams from dying halfway through long songs
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",
-}
 
-ytdl = yt_dlp.YoutubeDL(YTDL_OPTS)
+# metadata/search only
+ytdl_search = yt_dlp.YoutubeDL(YTDL_OPTS)
+# actual downloading
+ytdl_download = yt_dlp.YoutubeDL({
+    **YTDL_OPTS,
+    "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
+    "overwrites": True,
+})
 
 
 @dataclass
@@ -70,14 +79,48 @@ class Track:
     @property
     def pretty_duration(self) -> str:
         if not self.duration:
-            return "live/unknown"
+            return "unknown"
         m, s = divmod(int(self.duration), 60)
         h, m = divmod(m, 60)
         return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"
 
 
+async def search_track(query: str, requester: discord.Member, loop: asyncio.AbstractEventLoop) -> Track:
+    data = await loop.run_in_executor(None, lambda: ytdl_search.extract_info(query, download=False))
+    if "entries" in data:  # search results
+        if not data["entries"]:
+            raise ValueError("No results found.")
+        data = data["entries"][0]
+    if data.get("is_live") or data.get("live_status") == "is_live":
+        raise ValueError("Live streams aren't supported.")
+    duration = data.get("duration")
+    if duration and duration > MAX_DURATION:
+        raise ValueError("That's longer than 3 hours.")
+    return Track(
+        title=data.get("title", "Unknown"),
+        webpage_url=data.get("webpage_url") or data.get("url"),
+        duration=duration,
+        requester=requester,
+    )
+
+
+async def download_track(url: str, loop: asyncio.AbstractEventLoop) -> str:
+    def _download():
+        info = ytdl_download.extract_info(url, download=True)
+        return ytdl_download.prepare_filename(info)
+    return await loop.run_in_executor(None, _download)
+
+
+def _delete(path: str | None):
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 class GuildPlayer:
-    """Holds queue + state for one server."""
+    """Queue + playback state for one server."""
 
     def __init__(self, bot: commands.Bot, guild: discord.Guild, channel: discord.abc.Messageable):
         self.bot = bot
@@ -93,7 +136,6 @@ class GuildPlayer:
         while True:
             self.next_event.clear()
 
-            # wait for a song, or leave after being idle
             try:
                 track = await asyncio.wait_for(self._wait_for_track(), timeout=IDLE_TIMEOUT)
             except asyncio.TimeoutError:
@@ -104,24 +146,41 @@ class GuildPlayer:
             if not vc:
                 return await self.destroy()
 
-            # Stream URLs expire, so resolve right before playing
+            path = None
             try:
-                stream_url = await resolve_stream_url(track.webpage_url, self.bot.loop)
+                async with self.text_channel.typing():
+                    path = await download_track(track.webpage_url, self.bot.loop)
             except Exception as e:
                 await self.text_channel.send(f"⚠️ Couldn't play **{track.title}**: `{e}`")
                 continue
 
             source = discord.PCMVolumeTransformer(
-                discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTS), volume=self.volume
+                discord.FFmpegPCMAudio(path, options="-vn"), volume=self.volume
             )
+
+            def after(err):
+                if err:
+                    print(f"[music] playback error: {err}")
+                self.bot.loop.call_soon_threadsafe(self.next_event.set)
+
             self.current = track
-            vc.play(source, after=lambda err: self.bot.loop.call_soon_threadsafe(self.next_event.set))
+            try:
+                vc.play(source, after=after)
+            except Exception as e:
+                _delete(path)
+                self.current = None
+                await self.text_channel.send(f"⚠️ Playback failed: `{e}`")
+                continue
+
             await self.text_channel.send(
                 f"🎶 Now playing **{track.title}** `[{track.pretty_duration}]` — requested by {track.requester.display_name}"
             )
 
-            await self.next_event.wait()
-            self.current = None
+            try:
+                await self.next_event.wait()
+            finally:
+                self.current = None
+                _delete(path)
 
     async def _wait_for_track(self) -> Track:
         while not self.queue:
@@ -136,26 +195,6 @@ class GuildPlayer:
             await self.guild.voice_client.disconnect(force=True)
         if not self.task.done() and asyncio.current_task() is not self.task:
             self.task.cancel()
-
-
-async def search_track(query: str, requester: discord.Member, loop: asyncio.AbstractEventLoop) -> Track:
-    """Look up metadata only (fast-ish, runs in a thread so the bot doesn't freeze)."""
-    data = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
-    if "entries" in data:  # search results
-        if not data["entries"]:
-            raise ValueError("No results found.")
-        data = data["entries"][0]
-    return Track(
-        title=data.get("title", "Unknown"),
-        webpage_url=data.get("webpage_url") or data.get("url"),
-        duration=data.get("duration"),
-        requester=requester,
-    )
-
-
-async def resolve_stream_url(url: str, loop: asyncio.AbstractEventLoop) -> str:
-    data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-    return data["url"]
 
 
 class Music(commands.Cog):
@@ -174,6 +213,11 @@ class Music(commands.Cog):
         if not ctx.guild:
             raise commands.NoPrivateMessage()
         return True
+
+    async def cog_command_error(self, ctx: commands.Context, error):
+        traceback.print_exception(type(error), error, error.__traceback__)
+        original = getattr(error, "original", error)
+        await ctx.send(f"⚠️ `{type(original).__name__}: {original}`")
 
     async def ensure_same_channel(self, ctx: commands.Context) -> bool:
         vc = ctx.voice_client
@@ -206,7 +250,7 @@ class Music(commands.Cog):
                 return await ctx.send(f"⚠️ Couldn't find that: `{e}`")
 
         player.queue.append(track)
-        if vc.is_playing() or vc.is_paused():
+        if vc.is_playing() or vc.is_paused() or player.current:
             await ctx.send(f"➕ Queued **{track.title}** (position {len(player.queue)})")
 
     @commands.command(aliases=["s"])
@@ -215,7 +259,7 @@ class Music(commands.Cog):
             return
         vc = ctx.voice_client
         if vc and (vc.is_playing() or vc.is_paused()):
-            vc.stop()  # triggers the after-callback → next song
+            vc.stop()
             await ctx.message.add_reaction("⏭️")
         else:
             await ctx.send("Nothing's playing.")
@@ -316,9 +360,8 @@ class Music(commands.Cog):
         vc = member.guild.voice_client
         if not vc or not before.channel or before.channel != vc.channel:
             return
-        humans = [m for m in vc.channel.members if not m.bot]
-        if not humans:
-            await asyncio.sleep(30)  # grace period in case they rejoin
+        if not [m for m in vc.channel.members if not m.bot]:
+            await asyncio.sleep(30)  # grace period
             if vc.is_connected() and not [m for m in vc.channel.members if not m.bot]:
                 player = self.players.get(member.guild.id)
                 if player:
