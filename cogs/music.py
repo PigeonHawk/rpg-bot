@@ -430,6 +430,9 @@ class Music(commands.Cog):
             await asyncio.sleep(30)  # grace period
             if vc.is_connected() and not [m for m in vc.channel.members if not m.bot]:
                 player = self.players.get(member.guild.id)
+                # stay put while a song is on repeat
+                if player and player.repeat and player.current:
+                    return
                 if player:
                     await player.destroy()
                 else:
