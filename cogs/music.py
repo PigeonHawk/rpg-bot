@@ -44,8 +44,9 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 YTDL_OPTS = {
     "format": "bestaudio/best",
     "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
+    "quiet": False,
+    "no_warnings": False,
+    "verbose": True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
     # PO token provider (bgutil service on Railway) — gets past YouTube's bot check
