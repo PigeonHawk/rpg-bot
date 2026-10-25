@@ -13,6 +13,7 @@ Optional env vars:
     YTDL_COOKIES      — path to a cookies.txt file instead
 
 Commands (prefix):
+    !join                   — join your voice channel
     !play <url or search>   (!p)
     !skip (!s), !pause, !resume, !queue (!q), !np, !volume <0-100> (!vol)
     !remove <position>, !clear, !stop, !leave (!dc)
@@ -56,6 +57,9 @@ if _cookie_b64:
     with open(_cookie_path, "wb") as f:
         f.write(base64.b64decode(_cookie_b64))
     YTDL_OPTS["cookiefile"] = _cookie_path
+    with open(_cookie_path, encoding="utf-8", errors="ignore") as f:
+        _yt_lines = [l for l in f if "youtube.com" in l]
+    print(f"[music] cookies loaded: {len(_yt_lines)} YouTube cookie lines")
 elif os.getenv("YTDL_COOKIES"):
     YTDL_OPTS["cookiefile"] = os.getenv("YTDL_COOKIES")
 
@@ -228,6 +232,20 @@ class Music(commands.Cog):
 
     # ---------- commands ----------
 
+    @commands.command()
+    async def join(self, ctx: commands.Context):
+        if not ctx.author.voice:
+            return await ctx.send("Join a voice channel first.")
+        vc = ctx.voice_client
+        if vc:
+            await vc.disconnect(force=True)  # clear any half-dead connection
+        vc = await ctx.author.voice.channel.connect(self_deaf=True)
+        await asyncio.sleep(3)
+        if vc.is_connected():
+            await ctx.send("✅ Joined and staying connected.")
+        else:
+            await ctx.send("❌ Joined but got dropped. Check the logs.")
+
     @commands.command(aliases=["p"])
     async def play(self, ctx: commands.Context, *, query: str):
         if not ctx.author.voice:
@@ -375,4 +393,7 @@ class Music(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    print(f"[music] discord.py {discord.__version__}")
+    if not YTDL_OPTS.get("cookiefile"):
+        print("[music] WARNING: no cookies set (YTDL_COOKIES_B64 missing)")
     await bot.add_cog(Music(bot))
