@@ -48,6 +48,12 @@ YTDL_OPTS = {
     "no_warnings": True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
+    # PO token provider (bgutil service on Railway) — gets past YouTube's bot check
+    "extractor_args": {
+        "youtubepot-bgutilhttp": {
+            "base_url": [os.getenv("POT_PROVIDER_URL", "http://bgutil.railway.internal:4416")]
+        }
+    },
 }
 
 # ---- cookies (needed on Railway/datacenter IPs) ----
@@ -394,6 +400,7 @@ class Music(commands.Cog):
 
 async def setup(bot: commands.Bot):
     print(f"[music] discord.py {discord.__version__}")
+    print(f"[music] PO token provider: {YTDL_OPTS['extractor_args']['youtubepot-bgutilhttp']['base_url'][0]}")
     if not YTDL_OPTS.get("cookiefile"):
         print("[music] WARNING: no cookies set (YTDL_COOKIES_B64 missing)")
     await bot.add_cog(Music(bot))
