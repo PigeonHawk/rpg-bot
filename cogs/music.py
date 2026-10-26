@@ -260,7 +260,8 @@ class Music(commands.Cog):
     async def addsong(self, ctx: commands.Context, *, name: str | None = None):
         files = ctx.message.attachments
         if not files:
-            return await ctx.send("Attach an audio file to the same message as `!addsong`.")
+            await self._delete_command(ctx)
+            return await ctx.send(f"{ctx.author.mention} attach an audio file to the same message as `!addsong`.")
 
         added, problems = [], []
         existing = {n.lower() for n in library_songs()}
@@ -290,8 +291,26 @@ class Music(commands.Cog):
             existing.add(song_name.lower())
             added.append(song_name)
 
-        lines = [f"✅ Added **{n}**" for n in added] + [f"⚠️ {p}" for p in problems]
+        # files are saved, so the original message can go
+        deleted = await self._delete_command(ctx)
+
+        who = ctx.author.display_name
+        lines = [f"✅ {who} added **{n}**" for n in added] + [f"⚠️ {p}" for p in problems]
+        if not deleted:
+            lines.append("-# (I couldn't delete the upload message — give me the Manage Messages permission here.)")
         await ctx.send("\n".join(lines))
+
+    async def _delete_command(self, ctx: commands.Context) -> bool:
+        """Delete the user's command message. Returns False if not allowed."""
+        try:
+            await ctx.message.delete()
+            return True
+        except discord.NotFound:
+            return True   # already gone
+        except discord.Forbidden:
+            return False
+        except discord.HTTPException:
+            return False
 
     @commands.command(aliases=["library", "lib"])
     async def songs(self, ctx: commands.Context, page: int = 1):
